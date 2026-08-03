@@ -3,6 +3,8 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+<!-- docs-sync test marker: will be removed once auto-sync is confirmed working -->
+
 ## 2026-08-01 — Algorithm-name parsing fixed everywhere; SKDH At-Home gains IC output
 
 The `algorithm` column across every IC/stride/WB/GSD evaluation function was picking up extra
