@@ -1,17 +1,17 @@
-- Overview
-  - [README](/)
-  - [Algorithm comparison](ALGORITHM_COMPARISON.md)
+- Getting Started
+  - [Overview](/)
   - [News](NEWS.md)
 
-- scripts/
-  - [scripts/README](scripts/README.md)
-  - [report_app reference](scripts/REPORT_APP_DOC.md)
-  - [long_format_exports/](scripts/long_format_exports/README.md)
+- Guides
+  - [Using the GUI](scripts/README.md)
+  - [Viewing Results (report app)](scripts/REPORT_APP_DOC.md)
+  - [Exporting to R](scripts/long_format_exports/README.md)
 
-- src/ug3imu/
-  - [preprocessing](src/ug3imu/preprocessing/README.md)
-  - [mocap](src/ug3imu/mocap/README.md)
-  - [indip](src/ug3imu/indip/README.md)
-  - [pipelines](src/ug3imu/pipelines/README.md)
-  - [metrics](src/ug3imu/metrics/README.md)
-  - [plotting](src/ug3imu/plotting/README.md)
+- Reference
+  - [Algorithm Comparison](ALGORITHM_COMPARISON.md)
+  - [Preprocessing](src/ug3imu/preprocessing/README.md)
+  - [Mocap (V3D)](src/ug3imu/mocap/README.md)
+  - [INDIP](src/ug3imu/indip/README.md)
+  - [Pipelines](src/ug3imu/pipelines/README.md)
+  - [Metrics & Evaluation](src/ug3imu/metrics/README.md)
+  - [Plotting](src/ug3imu/plotting/README.md)
