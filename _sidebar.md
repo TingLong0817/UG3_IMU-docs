@@ -1,6 +1,7 @@
 - Overview
   - [README](/)
   - [Algorithm comparison](ALGORITHM_COMPARISON.md)
+  - [News](NEWS.md)
 
 - scripts/
   - [scripts/README](scripts/README.md)
@@ -14,6 +15,3 @@
   - [pipelines](src/ug3imu/pipelines/README.md)
   - [metrics](src/ug3imu/metrics/README.md)
   - [plotting](src/ug3imu/plotting/README.md)
-
-- Updates
-  - [News](NEWS.md)
