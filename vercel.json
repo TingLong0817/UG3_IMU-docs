@@ -1,3 +1,4 @@
 {
-  "outputDirectory": "."
+  "buildCommand": "mkdir -p public && cp -r index.html _sidebar.md .nojekyll README.md NEWS.md ALGORITHM_COMPARISON.md scripts src public/",
+  "outputDirectory": "public"
 }
