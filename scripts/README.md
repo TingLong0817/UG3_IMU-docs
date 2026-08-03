@@ -77,7 +77,7 @@ Reads `Evaluation/` CSVs written by `imu_pipeline.py`'s **Evaluate Results** but
 cross-subject comparison tables/plots (bias, RMSE, ICC, Bland-Altman) per algorithm. Depends on
 `aggregate_ic_results.py` for shared summary-statistics helpers (`_STRIDE_PARAMS`, `_add_f1`,
 `_detection_summary`, `_icc21`). Full file-naming conventions, expected CSV columns, and dashboard
-architecture are documented separately in **[REPORT_APP_DOC.md](REPORT_APP_DOC.md)** (中文).
+architecture are documented separately in **[REPORT_APP_DOC.md](REPORT_APP_DOC.md)**.
 
 ## `aggregate_ic_results.py` — cross-subject CLI aggregation
 

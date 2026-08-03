@@ -17,7 +17,7 @@ below into whichever part you're actually touching.
 | Doc | Covers |
 |-----|--------|
 | [scripts/README.md](scripts/README.md) | GUI usage (`imu_pipeline.py`), preset buttons, task keywords, `report_app.py` dashboard, CLI aggregation tool |
-| [scripts/REPORT_APP_DOC.md](scripts/REPORT_APP_DOC.md) | `report_app.py` file-naming conventions and CSV schema (中文) |
+| [scripts/REPORT_APP_DOC.md](scripts/REPORT_APP_DOC.md) | `report_app.py` file-naming conventions and CSV schema |
 | [src/ug3imu/preprocessing/README.md](src/ug3imu/preprocessing/README.md) | Device loaders, axis/unit conversion, input-format registry, adding a device or format |
 | [src/ug3imu/mocap/README.md](src/ug3imu/mocap/README.md) | V3D TXT parsing, the IMU/mocap time-alignment problem and how it's solved |
 | [src/ug3imu/indip/README.md](src/ug3imu/indip/README.md) | INDIP `.mat` reference system — loader, windowing, batch evaluation |
