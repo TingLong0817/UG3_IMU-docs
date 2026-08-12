@@ -103,6 +103,29 @@ share double-support periods, they just get attributed to whichever stride's win
 [`ug3imu.indip`](../indip/README.md)'s `_cwp_to_stride_df` reuses this exact function on INDIP's own raw
 IC/FC events, so V3D and INDIP report these four metrics on the same footing.
 
+### `is_turn` / `is_step` labeling
+
+Both are computed by **time-interval overlap**, not by matching a stride's boundary IC against a discrete
+event timestamp:
+
+- `is_turn` — `Pelvis_Turn_On`/`Pelvis_Turn_Off` are paired, row-aligned columns giving the `[start, end]`
+  time (seconds) of each turn, one row per turn. Not per-side — a turn is a whole-body pelvis-rotation
+  event.
+- `is_step` — same shape, from `step_start`/`step_end` (obstacle-crossing intervals; present only in the
+  obstacle tasks, e.g. STEPWA/STEPWB).
+
+A stride is flagged if its own `[IC_i, IC_i+1]` span overlaps *any* such interval — `_paired_intervals`
+builds the `(start, end)` list (dropping unmatched rows, e.g. a turn that started but has no recorded end
+because the trial was cut mid-turn), `_overlaps_any` does the inclusive-bounds overlap check. No
+left/right distinction. This replaced an earlier approach of matching a stride's boundary IC against
+discrete `RIC_TURN`/`LIC_TURN` or `RIC_STEP`/`LIC_STEP` timestamps — those columns are still present in
+some exports but no longer read. **Files without the new columns get `is_turn`/`is_step` = `False` for
+every stride** — there's no fallback to the old columns.
+
+[`ug3imu.indip`](../indip/README.md)'s `_cwp_to_stride_df` uses the same overlap rule for its own
+`is_turn` (from INDIP's `Turn_Start`/`Turn_End`); INDIP has no obstacle-step concept, so it has no
+`is_step`.
+
 ## Where this is consumed
 
 - [`pipelines/dataset_generation.py`](../pipelines/dataset_generation.py) / [`pipelines/pipeline_factory.py`](../pipelines/pipeline_factory.py) — `parse_mocap_frame_window` for lab windowing (MobGap `DummyGSD`, SKDH crop array)

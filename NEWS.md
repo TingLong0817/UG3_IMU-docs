@@ -3,6 +3,34 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-08-12 — Turn/step stride labels now come from time-interval overlap; INDIP gets `is_turn` too
+
+V3D's `is_turn`/`is_step` now come from new `Pelvis_Turn_On`/`Pelvis_Turn_Off` and `step_start`/`step_end`
+paired-interval columns — a stride is flagged if its own `[IC_i, IC_i+1]` span overlaps any turn/step
+interval, no left/right distinction. Replaces matching a stride's boundary IC against discrete
+`RIC_TURN`/`LIC_TURN` or `RIC_STEP`/`LIC_STEP` timestamps. V3D files without the new columns get
+`is_turn`/`is_step = False` for every stride — there's no fallback to the old columns.
+
+INDIP's `ContinuousWalkingPeriod` strides now carry the same `is_turn` label, computed from each bout's
+own `Turn_Start`/`Turn_End` — covers Lab and At-Home in one change, since At-Home reuses the Lab
+per-stride parser. INDIP has no obstacle-step concept, so there's no `is_step`. Long-format exports and
+`report_app.py`'s turn/step filtering and Bland-Altman coloring pick this up for INDIP automatically, no
+further changes needed there.
+
+`d9b6354`
+
+## 2026-08-12 — INDIP WB-level evaluation now uses CWP, not MicroWB
+
+`batch_wb_analysis_indip` and `batch_wb_analysis_indip_vs_mocap` now read INDIP's
+`ContinuousWalkingPeriod` instead of `MicroWB` for WB-level comparisons — MicroWB has no QC applied, so
+CWP is the reference used everywhere else already. Also fixed `stride_duration_s` in the WB-level output
+to be the arithmetic mean of each bout's own `Stride_Duration` array rather than `60/StrideFrequency`:
+per Mobilise-D's own `StrideFrequency` definition (`mean(60/Stride_Duration_k)`), inverting it back gives
+a harmonic mean of the stride durations, biased low relative to their true arithmetic mean — more so in
+bouts with variable stride durations (turns, free-living data).
+
+`372e457`
+
 ## 2026-08-01 — Clean algorithm names everywhere; SKDH At-Home now has IC output
 
 The `algorithm` column in every IC/stride/WB/GSD evaluation output is now always a clean algorithm

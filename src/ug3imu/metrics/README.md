@@ -63,7 +63,12 @@ from ug3imu.metrics import match_strides, process_stride_trial, batch_stride_ana
   (`stride_duration_s, cadence_spm, stride_length_m, walking_speed_mps, stance_time_s, swing_time_s,
   step_time_s, step_length_m, single_support_s, initial_double_support_s, terminal_double_support_s,
   double_support_s`). Params absent from one side become `NaN` rather than raising — e.g. `stance_time_s`
-  is `NaN` for MobGap since it doesn't compute that parameter.
+  is `NaN` for MobGap since it doesn't compute that parameter. `is_turn`/`is_step` are carried straight
+  through from the reference side's columns when present (`if flag in v3d_matched.columns`) — this is
+  generic, so it works the same whether the reference is V3D (see
+  [`ug3imu.mocap`](../mocap/README.md#public-api)) or INDIP (see
+  [`ug3imu.indip`](../indip/README.md#loading)); INDIP has no `is_step` since it has no obstacle-step
+  concept.
 - **IoU overlap filter** (`min_overlap_ratio > 0.0`): after IC-position matching, pairs are further
   filtered by window overlap —
   `IoU = intersection / union` where `intersection = min(end_ref, end_imu) − max(start_ref, start_imu)`
@@ -114,8 +119,13 @@ against.
 - `batch_wb_analysis_v3d(wb_folder, txt_folder, imu_fs, mocap_fs=255, ...)` — reference from
   `mocap_txt_to_wb_df` (see [`ug3imu.mocap`](../mocap/README.md)).
 - `batch_wb_analysis_indip(wb_folder, mat_path, imu_fs, ...)` — reference from
-  `load_indip_microwb_map` (see [`ug3imu.indip`](../indip/README.md)); reference rows are matched by task
-  name (3rd component of the trial key) rather than trial key directly, then aggregated the same way.
+  `load_indip_cwp_map` (see [`ug3imu.indip`](../indip/README.md)); uses `ContinuousWalkingPeriod`, not
+  `MicroWB` — MicroWB has no QC applied, so CWP is the reference used everywhere in this codebase.
+  Reference rows are matched by task name (3rd component of the trial key) rather than trial key
+  directly, then aggregated the same way. `stride_duration_s` in the reference row is the arithmetic
+  mean of the bout's own `Stride_Duration` array, not `60/StrideFrequency` — the latter works out to a
+  harmonic mean under Mobilise-D's own `StrideFrequency` definition (`mean(60/Stride_Duration_k)`), which
+  is biased low relative to the arithmetic mean, more so in bouts with variable stride durations.
 
 Both return `(error_df, rmse_df)` — `error_df` has one row per matched trial with `_ref/_imu/_error`
 (or `_indip` in the INDIP case) columns per `_WB_PARAMS`; `rmse_df` adds TP/FP/FN/precision/recall/F1 via
@@ -129,7 +139,7 @@ from ug3imu.metrics.gsd_evaluation import batch_gsd_analysis_indip, plot_gsd_wb_
 ```
 
 At-Home has no per-task trial structure — one subject's recording yields dozens of independent WBs from
-both the algorithm and INDIP's own MicroWB list, so `wb_evaluation.py`'s trial-aggregate approach doesn't
+both the algorithm and INDIP's own CWP list, so `wb_evaluation.py`'s trial-aggregate approach doesn't
 apply. Instead:
 
 - `normalize_athome_wb(wb_df, imu_fs)` — converts either pipeline's `*_wb.csv` (MobGap: `start`/`end` in
@@ -170,7 +180,7 @@ apply. Instead:
 - `plot_gsd_wb_timeline(wb_folder, mat_path, imu_fs, plot_dir, ...)` — saves one
   `{trial}_{algorithm}_gsd_wb.png` per algorithm found in `wb_folder`, using
   [`ug3imu.plotting.plot_wb_timeline`](../plotting/README.md)'s `ref_wb_intervals` overlay to show the
-  algorithm's WBs and INDIP's MicroWBs on a shared time axis. Generated during evaluation (not at
+  algorithm's WBs and INDIP's CWPs on a shared time axis. Generated during evaluation (not at
   pipeline-run time) because that's the first point where both the algorithm's `wb.csv` and the INDIP
   `.mat` path are available together.
 

@@ -26,11 +26,14 @@ mat["data"].TimeMeasure1
     .{trial_name}                           # e.g. "Trial2"
       .testName                             # e.g. "28MWA_" → stripped to "28MWA"
       .Standards.INDIP
-        .MicroWB                            # walking-bout-level struct arrays
-          .Start, .End, .Duration, .NumberStrides, .Cadence,
-          .WalkingSpeed, .AverageStrideLength, .StrideFrequency
+        .MicroWB                            # walking-bout-level struct arrays; NO QC applied — not used
+          .Start, .End, .Duration, .NumberStrides, .Cadence,     # for evaluation anywhere in this codebase,
+          .WalkingSpeed, .AverageStrideLength, .StrideFrequency  # see ContinuousWalkingPeriod below instead
         .ContinuousWalkingPeriod (CWP)       # stride-level struct
           .Start, .End                       # window bounds, seconds
+          .NumberStrides, .Cadence, .WalkingSpeed,
+          .AverageStrideLength, .StrideFrequency, .Duration
+          .Turn_Start, .Turn_End              # per-turn intervals, seconds; scalar if 1 turn, [] if 0
           .Stride_InitialContacts             # (N, 2) start/end IC pairs, 100 Hz frames
           .Stride_Duration, .Stride_Length, .Stride_Speed,
           .Stance_Duration, .Swing_Duration
@@ -53,7 +56,7 @@ independent of the external IMU's sampling rate — every function that returns 
 
 ```python
 from ug3imu.indip import (
-    load_indip_mat, load_indip_ic_map, load_indip_microwb_map,
+    load_indip_mat, load_indip_ic_map, load_indip_cwp_map,
     extract_indip_ic_df, get_cwp_windows_s, get_indip_windows,
     build_frame_windows_for_files, find_indip_mat,
     batch_ic_analysis_indip, batch_stride_analysis_indip,
@@ -64,15 +67,27 @@ from ug3imu.indip import (
 
 | Function | Returns | Source struct |
 |----------|---------|----------------|
-| `load_indip_mat(mat_path)` | `{task_name: stride_df}` — `start`, `end` (100 Hz frames), `lr_label`, stride params incl. `single_support_s`/`initial_double_support_s`/`terminal_double_support_s`/`double_support_s` | `ContinuousWalkingPeriod` |
+| `load_indip_mat(mat_path)` | `{task_name: stride_df}` — `start`, `end` (100 Hz frames), `lr_label`, `is_turn`, stride params incl. `single_support_s`/`initial_double_support_s`/`terminal_double_support_s`/`double_support_s` | `ContinuousWalkingPeriod` |
 | `load_indip_ic_map(mat_path)` | `{task_name: DataFrame[ic, lr_label]}` — **authoritative** full IC list | `CWP.InitialContactEvent` + `InitialContact_LeftRight` |
-| `load_indip_microwb_map(mat_path)` | `{task_name: microwb_df}` — one row per walking bout | `MicroWB` |
+| `load_indip_cwp_map(mat_path)` | `{task_name: cwp_df}` — one row per `ContinuousWalkingPeriod` (bout-level aggregates) | `ContinuousWalkingPeriod` — **not** `MicroWB` (no QC applied) |
+| `load_indip_cwp_athome(mat_path)` | One-row-per-bout `DataFrame` for the whole At-Home recording (bout-level aggregates) | `ContinuousWalkingPeriod` array (see [At-Home](#at-home-strideic-evaluation-incl-singledouble-support) below) |
 | `extract_indip_ic_df(stride_df, imu_fs)` | `DataFrame[ic, lr_label]` reconstructed from stride start/end | Fallback only — use `load_indip_ic_map` when possible; this approximates the IC list from stride boundaries when `InitialContactEvent` isn't usable |
 
 `lr_label` resolution in `_cwp_to_stride_df` is nontrivial: each stride's start IC frame is matched
 against `InitialContactEvent` (nearest within 2 frames) to look up its `InitialContact_LeftRight` label,
 because stride order in `Stride_InitialContacts` isn't guaranteed to align positionally with
 `InitialContact_LeftRight`. There's a direct-index fallback for older files where that assumption held.
+
+`is_turn` is computed by the same **time-interval overlap** rule used for V3D's turn labeling (see
+[`ug3imu.mocap`](../mocap/README.md#is_turn--is_step-labeling)): a stride is flagged if its own
+`[IC_start, IC_end]` span overlaps any of the CWP's own `Turn_Start`/`Turn_End` pairs — no left/right
+split. `Turn_Start`/`Turn_End` are scalars when `Turn_Number == 1` and empty arrays when `0`
+(`np.atleast_1d` normalizes both). INDIP has no obstacle-step concept, so there is no `is_step`.
+Verified against real data both in Lab and At-Home by cross-checking against INDIP's own
+`Turn_NumberStrides` per-turn count (Lab: 93% exact match; At-Home: 79%, lower mainly because
+back-to-back turns can legitimately share a stride — `Turn_NumberStrides` attributes each stride to at
+most one turn, but a per-stride `is_turn` flag is correctly `True` for both — plus two clearly corrupted
+`Turn_NumberStrides` values found in the At-Home file, e.g. 191 strides claimed for a 3.26 s turn).
 
 **Support-phase columns are computed from raw events, not from `SingleSupport_Duration` /
 `DoubleSupport_Duration`.** Those two CWP fields exist and are 1:1-aligned with `Stride_Duration`, but on
