@@ -3,6 +3,27 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-08-14 — Stride selection & walking-bout assembly unified to the Mobilise-D standard everywhere
+
+Every scenario (MobGap Lab/At-Home/Functional Test, SKDH Lab/At-Home) now selects strides and assembles
+walking bouts with the same rules: duration 0.2–3.0 s + stride length ≥ 0.15 m (no cadence rule), and WB
+assembly via mobgap's own `StrideSelection`/`WbAssembly` (min 4 strides/bout, max 3 s break) — previously
+Lab/Functional Test used a stricter, non-standard 0.6–2.0 s + cadence 60–200 spm rule, and SKDH filtered
+strides and grouped bouts with its own hand-rolled logic instead of MobGap's. SKDH now calls mobgap's
+classes directly, so both engines produce identical WBs from the same stride list. The shared rule set and
+trim logic live in a new `pipelines/mobilised_wb.py`, used by all three pipelines.
+
+Per the standard, the first and last stride of every WB (unreliable transition strides) are now excluded
+from per-stride output and from each WB's mean gait parameters. A WB's own `start`/`end`/`duration_s` keep
+the *full*, untrimmed stride-sequence extent, though — only `n_strides` and the parameter means come from
+the trimmed interior strides — so At-Home GSD-detection evaluation (which compares these WB boundaries
+against INDIP's CWP reference) isn't penalized with artificially narrow bout windows, and a short WB is no
+longer dropped outright just because few strides remain after trimming.
+
+SKDH's At-Home `wb.csv`/`stride.csv` also switch to the same unified column names MobGap and SKDH Lab
+already use (`start`/`end`/`n_strides`/`duration_s`/... instead of raw SKDH names like `Bout Starts`), so
+`gsd_evaluation.py`'s format detection and `report_app.py` treat all three pipelines identically.
+
 ## 2026-08-13 — Reports show GSD/ICD/LRC as separate columns; reference cadence QC; INDIP-vs-mocap dashboard catches up
 
 `report_app.py`'s IC Detection, Stride, and Walking Bouts tabs (interactive and PDF export) no longer
