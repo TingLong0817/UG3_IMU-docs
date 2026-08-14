@@ -50,6 +50,5 @@ per-trial IC plot layout (lab); the INDIP-overlay version is saved separately as
 ## Where this is consumed
 
 Both functions are called from every pipeline runner in [`ug3imu.pipelines`](../pipelines/README.md):
-`pipeline_factory.run_pipeline_on_dataset` (MobGap, all three scenarios), `athome_pipeline.py` (legacy
-MobGap at-home path), `skdh_lab_pipeline.run_skdh_lab_pipeline`, and
-`skdh_athome_pipeline.run_skdh_athome_pipeline`.
+`pipeline_factory.run_pipeline_on_dataset` (MobGap, all three scenarios),
+`skdh_lab_pipeline.run_skdh_lab_pipeline`, and `skdh_athome_pipeline.run_skdh_athome_pipeline`.

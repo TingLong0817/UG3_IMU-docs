@@ -44,9 +44,14 @@ from ug3imu.metrics import batch_ic_analysis_multi_algo, process_ic_trial, extra
   `error_df` has `detected`, `reference`, `error_samples`, `error_s` columns; `performance_metrics` is
   MobGap's TP/FP/FN/precision/recall dict.
 - `batch_ic_analysis_multi_algo(imu_folder, txt_folder, imu_fs, algorithm=None, exclude_tags=None, include_tags=None, ...)` —
-  runs `process_ic_trial` across every matching `{trial_key}_{algorithm}.csv` file in `imu_folder`,
-  matched by trial key to a V3D `.txt` file. Returns `(error_all, metrics_all)` concatenated across
-  trials/algorithms.
+  runs `process_ic_trial` across every matching IC csv in `imu_folder`, matched by trial key to a V3D
+  `.txt` file. Returns `(error_all, metrics_all)` concatenated across trials/algorithms. IC-detection
+  accuracy only depends on the GSD (windowing) + ICD pipeline stages, not LRC/etc (see
+  [pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns)), so within
+  each trial only one file per `("{gsd_algorithm}_{icd_algorithm}")` combination is evaluated — read from
+  the file's own `gsd_algorithm`/`icd_algorithm` columns (falls back to the full filename tag for files
+  that predate them). Otherwise the same IC result would be scored once per LRC choice it happened to be
+  generated alongside.
 - `extract_trial_key(name)` — `"_".join(stem.split("_")[:4])`. This 4-part key convention (subject, date,
   task, device/run — the exact meaning of parts 2–4 varies by naming scheme) is how every evaluation
   function pairs an IMU output file to its reference file.
@@ -166,17 +171,24 @@ apply. Instead:
   `load_indip_cwp_athome` (see [`ug3imu.indip`](../indip/README.md); at-home INDIP data is a struct
   *array* of independent bouts, not the Lab per-task struct). Uses the `ContinuousWalkingPeriod` (CWP)
   bout list, **not** `MicroWB` — CWP is the coarser definition that bridges short gaps MicroWB splits on.
-  Returns `(error_all, metrics_all)`:
+  Returns `(error_all, metrics_all)` — **labeled by different algorithm identities**, because they depend
+  on different parts of the pipeline (see
+  [pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns)):
   - `error_all` — one row per bout-level matched WB pair with `{param}_ref/_imu/_error` (same schema as
     `wb_evaluation.py`'s output, so it's written to the same `wb_error_indip_*.csv` filename and consumed
-    by the existing Walking Bouts tab unmodified).
-  - `metrics_all` — one row per trial × algorithm combining all three functions above: bout-level
-    `tp_wb`/`fp_wb`/`fn_wb`; unmatched totals `reference_num_gs`/`detected_num_gs`/
-    `reference_gs_duration_s`/`detected_gs_duration_s`/... (mobgap's own naming); and sample-level
-    `tp_samples`/`fp_samples`/`fn_samples`/`precision`/`recall`/`f1_score`/`tn_samples`/`specificity`/
-    `accuracy`/`npv` (same `tp_samples`/`fp_samples`/`fn_samples` convention as `ic_metrics_*.csv` —
-    genuinely sample counts this time, safe to sum across trials — reused by
-    `aggregate_ic_results._detection_summary()` for the GSD Detection tab's sample-level panel).
+    by the existing Walking Bouts tab unmodified). `algorithm` is the **full** `{gsd}_{icd}_{lrc}` pipeline
+    name — every `*_wb.csv` file is evaluated, since per-bout parameter values depend on the whole chain.
+  - `metrics_all` — one row per trial × **GSD algorithm** (not the full pipeline name) combining all three
+    functions above: bout-level `tp_wb`/`fp_wb`/`fn_wb`; unmatched totals `reference_num_gs`/
+    `detected_num_gs`/`reference_gs_duration_s`/`detected_gs_duration_s`/... (mobgap's own naming); and
+    sample-level `tp_samples`/`fp_samples`/`fn_samples`/`precision`/`recall`/`f1_score`/`tn_samples`/
+    `specificity`/`accuracy`/`npv` (same `tp_samples`/`fp_samples`/`fn_samples` convention as
+    `ic_metrics_*.csv` — genuinely sample counts this time, safe to sum across trials — reused by
+    `aggregate_ic_results._detection_summary()` for the GSD Detection tab's sample-level panel). Bout
+    boundaries don't depend on ICD/LRC, so only one `*_wb.csv` file per `(trial, gsd_algorithm)` is used
+    here — evaluating every file the way `error_all` does would score the same GSD result once per ICD/LRC
+    combination it was tested alongside, and the GSD Detection tab would show far more "algorithms" than
+    were actually tested.
 - `plot_gsd_wb_timeline(wb_folder, mat_path, imu_fs, plot_dir, ...)` — saves one
   `{trial}_{algorithm}_gsd_wb.png` per algorithm found in `wb_folder`, using
   [`ug3imu.plotting.plot_wb_timeline`](../plotting/README.md)'s `ref_wb_intervals` overlay to show the

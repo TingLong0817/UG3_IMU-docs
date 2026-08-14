@@ -96,7 +96,7 @@ further analysis on top of the aggregated tables.
 ## Legacy At-Home GUI
 
 `athome_monitoring.py` predates the unified `imu_pipeline.py` and has been moved to
-[`legacy_code/`](../legacy_code/athome_monitoring.py). It imports `create_athome_pipeline` /
-`run_athome_pipeline_on_dataset` from [`athome_pipeline.py`](../src/ug3imu/pipelines/athome_pipeline.py),
-which is itself marked legacy in [pipelines/README.md](../src/ug3imu/pipelines/README.md#files) — use
-`imu_pipeline.py`'s At-Home preset instead.
+[`legacy_code/`](../legacy_code/athome_monitoring.py) — archived, not run. It imports
+`create_athome_pipeline`/`run_athome_pipeline_on_dataset` from `athome_pipeline.py`, which was removed as
+dead code from `src/ug3imu/pipelines/` (see [pipelines/README.md](../src/ug3imu/pipelines/README.md#files)),
+so this script's imports no longer resolve. Use `imu_pipeline.py`'s At-Home preset instead.

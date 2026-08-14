@@ -69,7 +69,7 @@ positives/negatives.
 ```python
 from ug3imu.mocap import (
     parse_mocap_frame_window, mocap_txt_to_ic_df,
-    mocap_txt_to_stride_df, mocap_txt_to_step_df, mocap_txt_to_wb_df,
+    mocap_txt_to_stride_df, mocap_txt_to_wb_df,
 )
 ```
 
@@ -77,8 +77,7 @@ from ug3imu.mocap import (
 |----------|---------|-------|
 | `parse_mocap_frame_window(txt_path, mocap_fs, imu_fs)` | `(start_frame_imu, end_frame_imu)` | Falls back to min/max of `RHS/RTO/LHS/LTO` if `Cropped Measurement *` columns are absent |
 | `mocap_txt_to_ic_df(txt_path, mocap_fs, imu_fs)` | `DataFrame[ic, lr_label]` | One row per heel strike (RHS + LHS merged), `ic` in IMU frame index |
-| `mocap_txt_to_stride_df(txt_path, mocap_fs, imu_fs)` | `DataFrame[start, end, lr_label, stride_duration_s, cadence_spm, stride_length_m, walking_speed_mps, stance_time_s, swing_time_s, step_time_s, step_length_m, single_support_s, initial_double_support_s, terminal_double_support_s, double_support_s, is_turn, is_step]` | A stride = two consecutive same-side heel strikes (`RIC[i] → RIC[i+1]`) |
-| `mocap_txt_to_step_df(txt_path, mocap_fs, imu_fs)` | `DataFrame[step_id, lr_label, start_frame_imu, end_frame_imu, step_length_m, step_time_s]` | A right step = `RIC[i] ↔ LIC[i]`; a left step = `RIC[i] → LIC[i+1]` |
+| `mocap_txt_to_stride_df(txt_path, mocap_fs, imu_fs)` | `DataFrame[start, end, lr_label, stride_duration_s, cadence_spm, stride_length_m, walking_speed_mps, stance_time_s, swing_time_s, step_time_s, step_length_m, single_support_s, initial_double_support_s, terminal_double_support_s, double_support_s, is_turn, is_step]` | A stride = two consecutive same-side heel strikes (`RIC[i] → RIC[i+1]`); `step_time_s`/`step_length_m` come from the same per-side V3D columns a dedicated per-step extractor would use, so there's no separate step-level function |
 | `mocap_txt_to_wb_df(txt_path, mocap_fs)` | One-row `DataFrame` | Trial-level bilateral means, shaped to match IMU WB output columns |
 
 `mocap_txt_to_stride_df` pulls most per-stride values from the `_STRIDE_METRICS` column map (right/left →

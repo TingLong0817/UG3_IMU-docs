@@ -11,13 +11,19 @@ scenarios (Lab, At-Home, Functional Test) and both engines (MobGap, SKDH).
 | File | Role |
 |------|------|
 | [pipeline_factory.py](pipeline_factory.py) | **Unified MobGap factory** — `create_pipeline()`, `run_pipeline_on_dataset()`, algorithm registries, presets. Used for all three MobGap scenarios. |
-| [dataset_generation.py](dataset_generation.py) | `build_dataset_from_file_list()` — the dataset builder actually used by the GUI (works for lab, at-home, and functional test alike). Also `build_dataset_from_folder()`, kept for `legacy_code/` scripts but not called from the GUI. |
-| [athome_dataset_generation.py](athome_dataset_generation.py) | `INPUT_FORMATS` registry, file discovery (`discover_files_by_keyword`, `discover_athome_files`), `build_athome_dataset_from_files()` |
+| [dataset_generation.py](dataset_generation.py) | `build_dataset_from_file_list()` — the dataset builder used by the GUI (works for lab, at-home, and functional test alike) |
+| [athome_dataset_generation.py](athome_dataset_generation.py) | `INPUT_FORMATS` registry, file discovery (`discover_files_by_keyword`, `discover_athome_files`) |
 | [lab_pipeline.py](lab_pipeline.py) | `DummyGSD` — treats the mocap crop window as a single gait sequence (MobGap lab windowing) |
 | [skdh_lab_pipeline.py](skdh_lab_pipeline.py) | `run_skdh_lab_pipeline()` — SKDH `GaitLumbar` on the V3D-cropped window |
 | [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | `create_skdh_pipeline()`, `run_skdh_athome_pipeline()` — SKDH bout detection (`PredictGaitLumbarLgbm`) + `GaitLumbar`, stride filtering, WB assembly, DMO aggregation |
 | [qc_templates.py](qc_templates.py) | Shared QC text-block builders — MobGap and SKDH both render through these so output format is identical |
-| [athome_pipeline.py](athome_pipeline.py) | **Legacy** — MobGap at-home pipeline predating `pipeline_factory.py`. Not imported by `scripts/imu_pipeline.py`; superseded by `create_pipeline(windowing="gsd")` + `run_pipeline_on_dataset()`. Kept for backward compatibility / reference. |
+
+`build_dataset_from_folder()` (dataset_generation.py), `build_athome_dataset_from_files()`
+(athome_dataset_generation.py), and `athome_pipeline.py` in its entirety (a MobGap at-home pipeline
+predating `pipeline_factory.py`, superseded by `create_pipeline(windowing="gsd")` +
+`run_pipeline_on_dataset()`) were removed as dead code — none were imported by `scripts/imu_pipeline.py`.
+`legacy_code/athome_monitoring.py` still imports from the now-deleted `athome_pipeline.py`; that script is
+archived/not run, so its import breaking is expected, not a regression.
 
 ## Three windowing modes, one factory
 
@@ -93,7 +99,8 @@ pipeline = create_pipeline(windowing="gsd", gsd_algorithm="GsdIluz",
                            icd_algorithm="IcdIonescu", enable_dmo=True)
 run_pipeline_on_dataset(dataset, pipeline, output_path="results/TB017/AX6",
                         algorithm_name="GsdIluz_IcdIonescu", imu_fs=100,
-                        enable_dmo=True, plot_wb=True, plot_ic=True)
+                        enable_dmo=True, plot_wb=True, plot_ic=True,
+                        gsd_algorithm="GsdIluz", icd_algorithm="IcdIonescu")
 ```
 
 `run_pipeline_on_dataset` iterates every trial in the dataset, runs the pipeline, and writes whatever the
@@ -102,6 +109,39 @@ result object has (`gs_list_`, `raw_ic_list_`, `per_stride_parameters_`, `per_wb
 [Output directory layout](#output-directory-layout) below. `step_time_s` is computed here as a post-hoc
 addition to the stride table, since MobGap doesn't produce it natively:
 `step_time_s[i] = (IC[i+1] − IC[i]) / imu_fs`.
+
+### Per-stage algorithm columns
+
+Besides `algorithm_name` (the full pipeline identity baked into every output filename, e.g.
+`GsdIluz_IcdIonescu_LrcUllrich`), every row of `gs`/`ic`/`stride`/`wb`/`turn` output also carries one column
+per pipeline stage — `gsd_algorithm`, `icd_algorithm`, `lrc_algorithm`, `cadence_algorithm`,
+`stride_length_algorithm`, `walking_speed_algorithm`, `turn_algorithm` — written by
+`_stage_algorithm_columns()` from the `gsd_algorithm`/`icd_algorithm`/`lrc_algorithm` arguments passed to
+`run_pipeline_on_dataset` (the last four stages aren't user-selectable in this codebase, so those columns
+are constant today; kept for schema uniformity).
+
+This exists because different evaluation questions depend on different, *smaller* subsets of the full
+pipeline than the flat `algorithm_name` implies:
+
+- GSD-detection accuracy (did the algorithm find the right walking-bout windows) only depends on the GSD
+  stage — it's unaffected by which ICD/LRC a `wb.csv` happened to be generated with.
+- IC-detection accuracy depends on GSD (windowing) + ICD, not LRC/etc.
+- Per-stride/per-bout *parameter* accuracy (stride length, cadence, ...) genuinely depends on the whole
+  chain.
+
+Evaluation functions that only care about a result's GSD or IC identity read these columns directly instead
+of parsing the full `algorithm_name` out of the filename, and deduplicate down to one file per
+`(trial, gsd_algorithm)` or `(trial, gsd_algorithm, icd_algorithm)` — otherwise the *same* GSD (or IC)
+result would get evaluated once per ICD/LRC combination it was tested alongside, and turn up as several
+seemingly-different "algorithms" in the GSD Detection / IC tabs. See
+[`metrics/gsd_evaluation.py`](../metrics/README.md#gsd--wb-evaluation-for-at-home-gsd_evaluationpy) and
+[`indip.batch_ic_analysis_indip_athome`](../indip/README.md).
+
+`windowing != "gsd"` (Lab modes without a real GSD run) still gets a `gsd_algorithm` value rather than a
+blank one: `"mocap_windowed"` for `windowing="mocap"` (DummyGSD — window comes from the mocap crop), or
+`"full_window"` for `windowing="full"` (FullWindowGSD). SKDH's `gsd_algorithm`/`icd_algorithm` columns
+follow its own architecture instead (context detection vs. `gait_event_method`) — see
+[SKDH pipelines](#skdh-pipelines) below.
 
 ## SKDH pipelines
 
@@ -138,6 +178,16 @@ all_ic, all_stride = run_skdh_lab_pipeline(
 (`_compute_dmo`, same Mobilise-D thresholds as MobGap's `MobilisedAggregator`) since SKDH doesn't ship
 these itself.
 
+**Per-stage algorithm columns** (see [Running a pipeline](#per-stage-algorithm-columns) above) follow
+SKDH's own architecture rather than MobGap's, since SKDH bundles GSD (context/bout detection) and ICD
+(`gait_event_method`) into one `pipeline.run()` call: `gsd_algorithm` = `"SKDH_PredictGaitLumbarLgbm"`
+(constant — bout boundaries don't depend on `gait_event_method`) or `"full_window"` when `use_gsd=False`
+(At-Home) / always for Lab (mocap/INDIP-cropped, no real GSD step — same `"mocap_windowed"` convention
+MobGap's `windowing="mocap"` uses); `icd_algorithm` = `f"SKDH_{gait_event_method}"` (varies: `"SKDH_AP CWT"`
+or `"SKDH_Vertical CWT"`). `lrc_algorithm`/`cadence_algorithm`/`stride_length_algorithm`/
+`walking_speed_algorithm` are all `"SKDH_GaitLumbar"` — bundled into the same call, no user-selectable
+alternative; `turn_algorithm` is `"N/A"` since this pipeline doesn't do turn detection.
+
 ## File discovery (`athome_dataset_generation.py`)
 
 ```python
@@ -164,11 +214,6 @@ from ug3imu.pipelines import INPUT_FORMATS, discover_files_by_keyword, discover_
   function (walks `{root}/{subject}/{date}/{device}/At Home/*.csv`, requires `"athome"` in the filename).
   Superseded by `discover_files_by_keyword` for GUI use but still exported for scripts relying on the
   strict at-home layout.
-- **`build_athome_dataset_from_files(file_list, metadata_csv, sampling_rate_hz, device="AX6", ...)`** —
-  at-home-specific dataset builder (no mocap window, no txt matching); `dataset_generation.build_dataset_from_file_list`
-  is the more general replacement used by the GUI for all three scenarios, including at-home.
-- **`DEVICE_HEIGHT_MAP`** — `{"AX6": "AX6 height (meters)", "DP7": "Dynaport height (meters)", "OPAL": "APDM3 lumbar sensor height (meters)"}`.
-
 ## QC reports (`qc_templates.py`)
 
 Every pipeline run writes `qc/qc_summary_*.txt`. Both MobGap and SKDH call into

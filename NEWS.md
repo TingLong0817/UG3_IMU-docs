@@ -3,6 +3,66 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-08-13 — Reports show GSD/ICD/LRC as separate columns; reference cadence QC; INDIP-vs-mocap dashboard catches up
+
+`report_app.py`'s IC Detection, Stride, and Walking Bouts tabs (interactive and PDF export) no longer
+display the per-stage algorithm columns added earlier today as one flattened string — each stage that
+actually ran gets its own column (`GSD Algorithm` / `ICD Algorithm` / `LRC Algorithm`), so different
+pipeline stages are never mixed together when scanning a table. A stage that didn't really run — Lab's
+mocap-windowed crop or a Functional Test's full-recording window, neither of which is a selectable GSD
+algorithm — is hidden from display entirely rather than shown as a constant `GSD Algorithm` column, which
+was misleading readers into thinking a GSD algorithm had been evaluated in Lab. `ic_evaluation.py`,
+`wb_evaluation.py`, `stride_evaluation.py`, `gsd_evaluation.py`, and `indip`'s
+`batch_ic_analysis_indip*`/`batch_stride_analysis_indip*` now write these per-stage columns into their own
+output rows (previously only the pipeline-run step did).
+
+New **reference cadence QC**: a sidebar control (default 80–180 spm, adjustable) drops stride/WB rows whose
+*reference* (mocap/INDIP) cadence is out of range before computing bias/RMSE/ICC — unlike IMU-side strides,
+the reference cadence had no equivalent upstream filter. Applies to both `report_app.py` and the sibling
+`report_app_indipvsmocap.py`.
+
+`report_app_indipvsmocap.py` also gained the turn/obstacle-step stride exclusion filter and
+Straight/Turn/Step color-coded scatter + Bland-Altman plots that `report_app.py` already had — the
+underlying data (`is_turn`/`is_step`, carried through by `match_strides` from the V3D reference side) was
+already there, this dashboard just hadn't been updated to show it.
+
+Fixed a pre-existing bug in `aggregate_ic_results.py` (the standalone CLI aggregator): `_load_with_meta`
+was overwriting each file's correct per-row `algorithm` column with a garbage value derived from the
+filename (e.g. `"v3d_lab"`), so the CLI's `IC_summary_*.csv`/`stride_summary_*.csv` output couldn't group
+by algorithm correctly. Now only used as a fallback for files that predate the per-row column.
+
+## 2026-08-13 — Per-stage algorithm columns; GSD/IC results no longer duplicate across ICD/LRC choices
+
+Every pipeline output (`gs`/`ic`/`stride`/`wb`/`turn` CSVs, MobGap and SKDH, Lab and At-Home) now carries
+one column per pipeline stage — `gsd_algorithm`, `icd_algorithm`, `lrc_algorithm`, plus four constant
+columns for the non-selectable stages — alongside the existing full-pipeline `algorithm` filename tag.
+
+This fixes a real bug in At-Home evaluation: GSD-detection accuracy only depends on the GSD stage and
+IC-detection accuracy only depends on GSD+ICD, but both were previously labeled and grouped by the full
+`{gsd}_{icd}_{lrc}` pipeline name — so testing one GSD algorithm against several ICD choices made the
+*same* GSD result show up as several different "algorithms" in the GSD Detection tab, cluttering it with
+what looked like IC algorithm names. `gsd_evaluation.batch_gsd_analysis_indip`,
+`ic_evaluation.batch_ic_analysis_multi_algo`, and `indip`'s `batch_ic_analysis_indip`/
+`batch_ic_analysis_indip_athome` now read the new columns directly and dedup to one result per
+`(trial, gsd_algorithm)` or `(trial, gsd_algorithm, icd_algorithm)`, while per-bout/per-stride *parameter*
+comparisons (which do depend on the whole chain) keep evaluating every file under the full pipeline name.
+`report_app.py` and the long-format exports needed no changes — they already group/read by whatever
+`algorithm` column the source data provides.
+
+`athome_pipeline.py` (a separate, older At-Home MobGap pipeline implementation) was found to be dead code
+during this work — `imu_pipeline.py` has exclusively used `pipeline_factory.py`'s unified
+`run_pipeline_on_dataset` (via `windowing="gsd"`) for both Lab and At-Home for some time.
+
+## 2026-08-13 — Dead code cleanup
+
+Removed code with zero remaining callers, found while auditing the pipeline output columns above:
+`pipelines/athome_pipeline.py` (superseded by `pipeline_factory.run_pipeline_on_dataset`, see above),
+`ug3imu/io/` (empty package), `dataset_generation.build_dataset_from_folder`,
+`athome_dataset_generation.build_athome_dataset_from_files`, and `mocap_utils.mocap_txt_to_step_df`
+(stride-level step metrics already come from `_STRIDE_METRICS`). `legacy_code/athome_monitoring.py` still
+imports from the now-deleted `athome_pipeline.py`; it's archived and not run, so its import is left broken
+rather than fixed — use `imu_pipeline.py`'s At-Home preset instead.
+
 ## 2026-08-12 — Turn/step stride labels now come from time-interval overlap; INDIP gets `is_turn` too
 
 V3D's `is_turn`/`is_step` now come from new `Pelvis_Turn_On`/`Pelvis_Turn_Off` and `step_start`/`step_end`
