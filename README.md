@@ -34,7 +34,7 @@ below into whichever part you're actually touching.
 - **Multi-format input**: NPZ (pre-processed) and CSV via an extensible format registry
 - **Two reference systems**: V3D mocap (Vicon Nexus) and INDIP (Mobilise-D in-lab reference)
 - **Two gait-analysis engines**: MobGap (`GenericMobilisedPipeline`) and SKDH (`GaitLumbar`), with matching output formats so results are directly comparable
-- **Stride quality filtering**: duration 0.6–2.0 s and stride length ≥ 0.15 m, consistently applied in all pipelines
+- **Mobilise-D-standard stride selection & walking-bout assembly**: duration 0.2–3.0 s + length ≥ 0.15 m, ≥4 strides/bout, ≤3.0 s gap, first/last stride of every WB excluded from parameters — identical across MobGap and SKDH, all three scenarios
 - **QC reports**: written for every run across all pipelines, with library version header
 - **Streamlit report app**: cross-subject dashboard for evaluation results (bias, RMSE, ICC, Bland-Altman)
 

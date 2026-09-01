@@ -155,8 +155,9 @@ apply. Instead:
   - `_match_wb_bouts` (via mobgap's `categorize_intervals` + `get_matching_intervals`) — bout-to-bout
     matching for the gait-parameter comparison. A (reference, detected) pair matches if their overlap
     covers >= `overlap_threshold` (default 0.8) of *both* sides' own duration (mobgap's own bidirectional
-    rule) — real-world bout-count match rates in the 20-40% range are expected, not a bug, since fragmented
-    or oversized WBs on either side fail this threshold easily.
+    rule — mobgap requires it strictly `> 0.5`, otherwise one detected bout could match several reference
+    bouts). Low bout-count match rates (a single subject often lands in the low teens out of 60+ reference
+    bouts) are expected, not a bug — see [Why At-Home matched-WB counts run low](#why-at-home-matched-wb-counts-run-low) below.
   - `_gsd_sample_level_metrics` (via mobgap's `categorize_intervals_per_sample` +
     `calculate_matched_gsd_performance_metrics`) — every timestamp independently classified tp/fp/fn/tn,
     giving precision/recall/f1/specificity/accuracy/npv that measure how much real walking *time* got
@@ -171,6 +172,8 @@ apply. Instead:
   `load_indip_cwp_athome` (see [`ug3imu.indip`](../indip/README.md); at-home INDIP data is a struct
   *array* of independent bouts, not the Lab per-task struct). Uses the `ContinuousWalkingPeriod` (CWP)
   bout list, **not** `MicroWB` — CWP is the coarser definition that bridges short gaps MicroWB splits on.
+  `overlap_threshold` is exposed in the GUI as the **WB overlap** field (Evaluation row, INDIP only) —
+  see [Why At-Home matched-WB counts run low](#why-at-home-matched-wb-counts-run-low).
   Returns `(error_all, metrics_all)` — **labeled by different algorithm identities**, because they depend
   on different parts of the pipeline (see
   [pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns)):
@@ -195,6 +198,37 @@ apply. Instead:
   algorithm's WBs and INDIP's CWPs on a shared time axis. Generated during evaluation (not at
   pipeline-run time) because that's the first point where both the algorithm's `wb.csv` and the INDIP
   `.mat` path are available together.
+
+### Why At-Home matched-WB counts run low
+
+The bout-count match rate (`tp_wb` / total reference bouts) from `_match_wb_bouts` is routinely low —
+often in the low teens against 60+ INDIP CWP bouts for a single subject, for **both** gait engines. This
+is structural, not a pipeline defect, and comes from two independent causes:
+
+1. **INDIP's CWP includes turns inside one continuous bout; the Mobilise-D WB assembly splits at them.**
+   A CWP is one *continuous walking period* — walk → turn → walk stays a single reference bout. Our shared
+   `StrideSelection` + `WbAssembly` (`pipelines/mobilised_wb.py`) drops the short-length / long-duration
+   strides that occur while pivoting, leaving a gap that `MaxBreakCriteria(max_break_s=3)` then splits on
+   — so the turn portion (and a few seconds either side) ends up in *no* WB. Even a perfectly detected
+   IMU bout is therefore systematically **shorter** than the CWP it should match, and the bidirectional
+   ≥80 % rule rejects it on the "covers ≥80 % of the reference" side. This affects MobGap and SKDH
+   identically. Roughly half of a typical subject's CWP bouts also fall in stretches the shared GSD never
+   produced a window for (short <15 s bouts) — those are missed by both engines regardless of gait stage.
+2. **SKDH's AP/Vertical-CWT IC detection goes silent for multi-second stretches in low-amplitude gait.**
+   Its `find_peaks` prominence bar is `k · std(CWT coeff over the whole bout)` (k = 0.6 for AP, 0.5 for
+   vertical), computed once per bout and dominated by strong steady walking; a 4–6 s near-stop / slow
+   shuffle drops below that bar and yields no IC there. MobGap's `IcdIonescu` is threshold-free
+   (zero-crossing geometry) and keeps emitting ICs, sparse but continuous. The IC gap → a >3 s stride gap
+   → an extra `MaxBreakCriteria` split → more fragments that fail the overlap rule. So on the same MobGap
+   GSD, SKDH gait matches noticeably fewer CWP bouts than MobGap gait at the 0.8 threshold.
+
+**Levers.** Lowering **`overlap_threshold`** to ~0.6–0.7 (GUI: **WB overlap** field) compensates for
+cause 1 and lifts `tp_wb` for both engines — the residual mismatch is mostly "IMU cleanly captured the
+walking, minus the turn", which is arguably a correct detection of the walking portion. It only helps
+marginally at 0.8. Cause 2 is an SKDH IC-detector sensitivity issue, not fixable by this threshold; it can
+be reduced separately by lowering `GaitLumbar`'s `ic_prom_factor` / `fc_prom_factor` (AP CWT only) in
+[`pipelines/unified_engine.py`](../pipelines/unified_engine.py) — ~0.3 recovers most of the dropped ICs
+without inflating spurious strides, but leaves the strict-0.8 count near unchanged.
 
 ## Where this is consumed
 

@@ -3,6 +3,24 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-09-01 — At-Home WB match threshold is adjustable in the GUI
+
+The bidirectional bout-overlap threshold used to match a detected walking bout against an INDIP CWP bout
+(`batch_gsd_analysis_indip`'s `overlap_threshold`) is now a **WB overlap** field in the GUI's Evaluation
+row (INDIP reference only), default `0.8`, clamped to `> 0.5`, remembered in `project_settings.json`. The
+`Evaluate Results` log line now reports the value it used.
+
+Why it's needed: At-Home matched-WB counts are structurally low at `0.8` for **both** gait engines, and
+lowering the threshold to ~0.6–0.7 is the intended remedy. Two causes, now written up in
+[metrics/README.md — Why At-Home matched-WB counts run low](src/ug3imu/metrics/README.md#why-at-home-matched-wb-counts-run-low):
+(1) INDIP's `ContinuousWalkingPeriod` keeps a turn inside one continuous bout, while the shared
+Mobilise-D `WbAssembly` drops the turn strides and splits the bout at the resulting >3 s gap — so a
+correctly detected IMU bout is systematically shorter than the CWP it should match; (2) SKDH's
+`GaitLumbar` CWT IC detector gates on a bout-global prominence and goes silent for several seconds in
+low-amplitude gait, fragmenting bouts further (MobGap's threshold-free `IcdIonescu` does not). Cause 2 is
+separately reducible via `GaitLumbar`'s `ic_prom_factor` / `fc_prom_factor` (AP CWT) — noted in
+[pipelines/README.md](src/ug3imu/pipelines/README.md#how-the-two-engines-are-bridged); not yet exposed.
+
 ## 2026-08-14 — Stride selection & walking-bout assembly unified to the Mobilise-D standard everywhere
 
 Every scenario (MobGap Lab/At-Home/Functional Test, SKDH Lab/At-Home) now selects strides and assembles

@@ -57,6 +57,19 @@ whitelist that keeps only the lumbar sensor file when a trial has multiple place
 Presets are read from `PRESETS` in [pipeline_factory.py](../src/ug3imu/pipelines/pipeline_factory.py) —
 see [pipelines/README.md](../src/ug3imu/pipelines/README.md#presets) for the full config each preset sets.
 
+### Evaluation controls
+
+The **Evaluation** row (shown when *Compare against reference* is checked) has a reference-type dropdown
+(`Mocap (V3D TXT)` / `INDIP` / …) and, for INDIP, a **WB overlap** field. That value is the bidirectional
+bout-match threshold passed to `batch_gsd_analysis_indip` (`overlap_threshold`, default `0.8`, clamped to
+`> 0.5`): a detected walking bout counts as matching an INDIP CWP bout only if their overlap covers that
+fraction of *both* bouts' durations. Lowering it to ~0.6–0.7 is the intended way to get a usable number of
+matched At-Home WBs — At-Home match rates are structurally low at 0.8 because INDIP's CWP bundles turns
+into one bout while the pipeline's WB assembly splits at them. Full rationale in
+[metrics/README.md — Why At-Home matched-WB counts run low](../src/ug3imu/metrics/README.md#why-at-home-matched-wb-counts-run-low).
+The field only affects INDIP At-Home GSD/WB evaluation — not pipeline runs, not Lab/mocap evaluation, not
+stride evaluation — and is remembered in `project_settings.json`.
+
 ### `task_config.json`
 
 Editable via the **Settings…** button next to the Task dropdown. Each entry is

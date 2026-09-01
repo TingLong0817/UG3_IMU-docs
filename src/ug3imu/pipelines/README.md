@@ -15,7 +15,8 @@ scenarios (Lab, At-Home, Functional Test) and both engines (MobGap, SKDH).
 | [athome_dataset_generation.py](athome_dataset_generation.py) | `INPUT_FORMATS` registry, file discovery (`discover_files_by_keyword`, `discover_athome_files`) |
 | [lab_pipeline.py](lab_pipeline.py) | `DummyGSD` — treats the mocap crop window as a single gait sequence (MobGap lab windowing) |
 | [skdh_lab_pipeline.py](skdh_lab_pipeline.py) | `run_skdh_lab_pipeline()` — SKDH `GaitLumbar` on the V3D-cropped window |
-| [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | `create_skdh_pipeline()`, `run_skdh_athome_pipeline()` — SKDH bout detection (`PredictGaitLumbarLgbm`) + `GaitLumbar`, stride filtering, WB assembly, DMO aggregation |
+| [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | `create_skdh_pipeline()`, `run_skdh_athome_pipeline()` — SKDH bout detection (`PredictGaitLumbarLgbm`) + `GaitLumbar`, DMO aggregation |
+| [mobilised_wb.py](mobilised_wb.py) | `WBA_RULES`, `trim_edge_strides_and_summarize()` — the shared Mobilise-D-standard WB-assembly rules and first/last-stride trim, used identically by `pipeline_factory.py`, `skdh_lab_pipeline.py`, and `skdh_athome_pipeline.py` (see [Stride selection & walking-bout assembly](#stride-selection--walking-bout-assembly-mobilised_wbpy) below) |
 | [qc_templates.py](qc_templates.py) | Shared QC text-block builders — MobGap and SKDH both render through these so output format is identical |
 
 `build_dataset_from_folder()` (dataset_generation.py), `build_athome_dataset_from_files()`
@@ -24,6 +25,118 @@ predating `pipeline_factory.py`, superseded by `create_pipeline(windowing="gsd")
 `run_pipeline_on_dataset()`) were removed as dead code — none were imported by `scripts/imu_pipeline.py`.
 `legacy_code/athome_monitoring.py` still imports from the now-deleted `athome_pipeline.py`; that script is
 archived/not run, so its import breaking is expected, not a regression.
+
+## Unified engine — GSD / Gait / Turn algorithms freely combinable
+
+`unified_engine.run_unified_pipeline(dataset, config, output_path, ...)` is a single entry point that
+supersedes `run_pipeline_on_dataset` (MobGap) + `run_skdh_lab_pipeline` + `run_skdh_athome_pipeline`
+(SKDH). It lets a MobGap stage and an SKDH stage be mixed in one run — e.g. **MobGap `GsdIluz` for
+gait-sequence detection + SKDH `GaitLumbar` (`AP CWT`) for IC detection and per-stride parameters**.
+
+| File | Role |
+|------|------|
+| [stage_registry.py](stage_registry.py) | `PipelineConfig` dataclass, `GSD_ENGINES` / `GAIT_ENGINES` registries, `PRESETS` (unified shape), `resolve_algorithm_name()`, `stage_algorithm_values()` |
+| [unified_engine.py](unified_engine.py) | `run_unified_pipeline()`, `detect_gsd()`, `_ReplayGSD`, `expand_configs()` |
+
+### Stage model & the one hard constraint
+
+| Stage | `mobgap` engine | `skdh` engine |
+|-------|-----------------|---------------|
+| **GSD** (`windowing="gsd"`) | `GsdIluz` / `GsdIonescu` / `GsdAdaptiveIonescu` | `PredictGaitLumbarLgbm` |
+| **Gait** = IC + laterality + cadence + stride length + walking speed | `IcdIonescu`/`IcdShinImproved`/`IcdHKLeeImproved` × `LrcUllrich`/`LrcMansour`/`LrcMcCamley`, then `CadFromIc` / `SlZijlstra` / `WsNaive` | `GaitLumbar(gait_event_method="AP CWT" \| "Vertical CWT")` — one atomic block |
+| **Turn** | `TdElGohary` (or off) — independent of the gait engine | ″ |
+| Stride selection + WB assembly + first/last-stride trim + DMO | fixed, shared ([mobilised_wb.py](mobilised_wb.py)) | ″ |
+
+`windowing="ref"` (mocap / INDIP crop) and `windowing="full"` (whole recording) replace the GSD
+detector with a single fixed window, exactly as `DummyGSD` / `FullWindowGSD` did.
+
+**Why "Gait" is one block, not four:** SKDH's `GaitLumbar` detects its own initial contacts and
+computes laterality / cadence / stride length / walking speed in a single `predict()` call and does
+**not** accept externally supplied ICs. So "use SKDH's IC timing but MobGap's `SlZijlstra`" is not
+possible; picking the gait engine picks the whole IC→parameters block. GSD and Turn stay freely
+mixable because both sides expose them as standalone windows-in / table-out steps.
+
+### How the two engines are bridged
+
+1. The GSD stage always runs first → a canonical `gs_list` DataFrame (`start` / `end` IMU frame
+   indices, `gs_id`-named index).
+2. **`gait_engine="mobgap"`** — `gs_list` is replayed into `GenericMobilisedPipeline` via
+   `_ReplayGSD` (a stand-in GSD object whose `detect()` just returns the pre-computed list, keyed by
+   `dp_group`). MobGap's own per-GS iteration then runs unchanged, so this path is byte-identical to
+   the old `create_pipeline` + `run_pipeline_on_dataset` when the GSD engine is also MobGap.
+3. **`gait_engine="skdh"`** — `skdh.gait.GaitLumbar(min_bout_time=0.0, max_bout_separation_time=3.0)
+   .predict(..., gait_bouts=[[0, len]], gait_pred=False)`, run **once per GSD window** on a
+   `± 2 s`-padded crop of the recording (ICs outside the true window are discarded afterwards; the pad
+   only gives `GaitLumbar`'s CWT clean edges). Per-window isolation means one bad window can't abort the
+   others. `min_bout_time=0.0` disables SKDH's own 8 s bout floor so the GSD stage's windows stay
+   authoritative (plan decision D1); `max_bout_separation_time=3.0` matches the shared
+   `MaxBreakCriteria(max_break_s=3)` downstream (leaving it at `0` fragments each window at every turn
+   or brief pause). The shared Mobilise-D tail (`StrideSelection` → `WbAssembly(WBA_RULES)` →
+   `trim_edge_strides_and_summarize` → `_compute_dmo`) then runs exactly as for MobGap.
+
+   **Known limitation:** `GaitLumbar`'s CWT IC detector (`AP CWT` / `Vertical CWT`) gates peaks on a
+   *bout-global* prominence (`k · std` of the CWT coefficients over the whole window) and can go silent
+   for several seconds in low-amplitude / near-stationary gait — a gap that then trips the 3 s WB break
+   and fragments the bout. MobGap's threshold-free `IcdIonescu` does not have this failure mode, so on
+   an *identical* MobGap GSD, SKDH gait tends to match fewer INDIP CWP bouts than MobGap gait. It can be
+   reduced by lowering `GaitLumbar`'s `ic_prom_factor` / `fc_prom_factor` (AP CWT only; ~0.3 recovers
+   most dropped ICs without inflating spurious strides) — currently hard-coded at SKDH's `0.6` default in
+   `_run_skdh_gait`. See
+   [metrics/README.md — Why At-Home matched-WB counts run low](../metrics/README.md#why-at-home-matched-wb-counts-run-low).
+
+Accelerometer data is loaded once (`build_dataset_from_file_list` → `dp.data_ss`, m/s²); the SKDH
+calls get `g` by dividing by 9.80665 — no second file read, so GSD frame indices always line up with
+what `GaitLumbar` sees.
+
+### Per-stage algorithm columns / output layout
+
+Unchanged from the split pipelines — see
+[Per-stage algorithm columns](#per-stage-algorithm-columns) and
+[Output directory layout](#output-directory-layout) below. `stage_algorithm_values(config)` fills
+`gsd_algorithm` / `icd_algorithm` / … with the same conventions
+(`"GsdIluz"`, `"SKDH_AP CWT"`, `"SKDH_PredictGaitLumbarLgbm"`, `"mocap_windowed"`, `"full_window"`,
+`"TdElGohary"`, …), so a cross-engine run such as `gsd_algorithm="GsdIluz"` +
+`icd_algorithm="SKDH_AP CWT"` is grouped/deduplicated correctly by the evaluation code with no
+changes there.
+
+### Usage
+
+```python
+from ug3imu.pipelines import (
+    build_dataset_from_file_list, run_unified_pipeline, PipelineConfig, expand_configs,
+)
+
+dataset = build_dataset_from_file_list(file_list=files, metadata_csv="participants.csv",
+                                       sampling_rate_hz=100, device="AX6")
+
+cfg = PipelineConfig(
+    windowing="gsd",
+    gsd_engine="mobgap", gsd_algorithm="GsdIluz",     # MobGap GSD
+    gait_engine="skdh",  icd_algorithm="AP CWT",       # SKDH IC + parameters
+    turn=True, enable_dmo=True,
+)
+run_unified_pipeline(dataset, cfg, output_path="results/TB017/AX6", imu_fs=100)
+
+# batch: cartesian-expand "All" selections
+for cfg in expand_configs(windowing="gsd", gsd_engine="mobgap",
+                          gsd_algorithms=["GsdIluz", "GsdIonescu"],
+                          gait_engine="mobgap",
+                          icd_algorithms=["IcdIonescu", "IcdShinImproved"],
+                          lrc_algorithms="LrcUllrich", turn=True, enable_dmo=False):
+    run_unified_pipeline(dataset, cfg, output_path="results/TB017/AX6", imu_fs=100)
+```
+
+### Status
+
+`run_unified_pipeline` is now the only pipeline entry point. `scripts/imu_pipeline.py` has a single
+**Pipeline** tab (was MobGap + SKDH tabs) with a per-stage engine × algorithm selector, presets, and
+"All" batch expansion (`expand_configs`). `ug3imu.pipelines` no longer exports
+`run_skdh_lab_pipeline` / `run_skdh_athome_pipeline` / `create_skdh_pipeline`; those modules stay only
+as the home of helpers the engine reuses (`gait_lumbar_df_to_stride_df`, `_ic_time_to_abs_s`,
+`_compute_dmo`, `_skdh_athome_qc_kwargs`, `_plot_ic_overlay`). `create_pipeline` /
+`run_pipeline_on_dataset` remain exported as the low-level MobGap builder the engine calls internally.
+`legacy_code/athome_monitoring.py` imports the removed `run_skdh_athome_pipeline`; that script is
+archived / not run, so the broken import is expected, not a regression.
 
 ## Three windowing modes, one factory
 
@@ -40,15 +153,61 @@ Everything downstream (IC detection, laterality, cadence, stride length, stride 
 assembly, turn detection, optional DMO) is identical across the three modes — only the GSD step changes.
 This is why Lab/At-Home/Functional-Test share one code path instead of three.
 
-### Stride quality filter (applied in all three modes)
+### Stride selection & walking-bout assembly (`mobilised_wb.py`)
 
-Hard-coded in `create_pipeline()`'s `StrideSelection` rules — **not** currently exposed as a GUI setting:
+Every scenario (Lab, At-Home, Functional Test) and both engines (MobGap, SKDH) select strides and assemble
+walking bouts (WBs) using the same rules, matching the official Mobilise-D / INDIP validation-paper
+definition exactly — this is what makes results directly comparable to INDIP. Not currently exposed as a
+GUI setting.
 
-- Duration: `0.6–2.0 s` inclusive → cadence 60–200 steps/min (`cadence_spm = 120 / duration_s`)
+**1. Stride selection** — `mobgap.wba.StrideSelection()`, mobgap's own unmodified `"mobilised"` default:
+
+- Duration: `0.2–3.0 s`
 - Length: `≥ 0.15 m`
+- No cadence rule (an earlier, non-standard 0.6–2.0 s + 60–200 spm rule used to apply to Lab/Functional
+  Test only — removed so every scenario now uses the identical, standard-compliant rule)
 
-The SKDH pipelines apply the identical thresholds via their own `_filter_strides()` (see
-[skdh_athome_pipeline.py](skdh_athome_pipeline.py)) so filtering behaves the same regardless of engine.
+**2. Walking-bout assembly** — `mobgap.wba.WbAssembly(rules=WBA_RULES)`, also mobgap's own unmodified
+`"mobilised"` default rules:
+
+- `NStridesCriteria(min_strides=4, min_strides_left=3, min_strides_right=3)` — a WB needs ≥4 strides total
+  to be included. (`min_strides_left`/`min_strides_right` are never actually evaluated — mobgap's own
+  inclusion check short-circuits on `min_strides` alone whenever it's set — kept only for parity with
+  mobgap's own default.)
+- `MaxBreakCriteria(max_break_s=3)` — a gap of >3.0 s between consecutive same-side strides ends the WB.
+
+Left/right stride sequences are built and broken on gaps internally by `WbAssembly` itself — this module
+just supplies the rule thresholds (`WBA_RULES`) and calls mobgap's classes directly, so MobGap and SKDH
+produce byte-identical WBs from the same stride list.
+
+**3. First/last-stride trim** — the standard also discards the first and last stride of every WB (they're
+transition strides, not reliable for per-stride parameters like cadence/length/speed). mobgap's own
+`WbAssembly` only has a mechanism for dropping the *last* one (`MaxBreakCriteria(remove_last_ic=True)`), and
+that mechanism has a real bug in the installed version: when the extra trim collapses a preliminary WB to
+zero/negative length (common with short, isolated At-Home bouts), `WbAssembly.assemble()` crashes inside its
+own exclusion-reason bookkeeping. So `remove_last_ic` stays at mobgap's default (`False`), and
+`trim_edge_strides_and_summarize()` does both edges as its own post-processing step on top of `WbAssembly`'s
+unmodified output instead:
+
+- The returned per-stride table (→ `stride.csv`) excludes the first and last stride of every WB.
+- A WB's own `start`/`end`/`duration_s` still span the **full, untrimmed** stride sequence (matching
+  mobgap's own `wb_meta_parameters_`) — only `n_strides` and the mean of the per-WB gait parameters are
+  computed from the trimmed interior strides. This matters for At-Home GSD-detection evaluation, which
+  matches these WB boundaries against INDIP's CWP reference by time overlap — narrowing the boundary by the
+  edge strides' own duration would make every WB look artificially shorter/later-starting than it actually
+  was, and a WB is never dropped outright just because few strides remain after trimming.
+
+`create_pipeline()` wires `stride_selection=StrideSelection()` and `wba=WbAssembly(rules=WBA_RULES)` into
+`GenericMobilisedPipeline`; `run_pipeline_on_dataset()` calls `trim_edge_strides_and_summarize()` right after
+`pipeline.run(dp)` and overwrites `res.per_stride_parameters_`/`res.per_wb_parameters_` in place (also
+re-running the DMO threshold mask + aggregation against the trimmed WBs when DMO is enabled, mirroring what
+`GenericMobilisedPipeline.run()` does internally). `skdh_lab_pipeline.py` and `skdh_athome_pipeline.py` call
+`StrideSelection()` → `WbAssembly(rules=WBA_RULES)` → `trim_edge_strides_and_summarize()` on their own
+GaitLumbar-derived stride tables the same way. SKDH At-Home pools strides from every bout
+`PredictGaitLumbarLgbm` detects (rather than keeping SKDH's own per-bout grouping as the final WB boundary)
+and lets `WbAssembly`'s own break rule re-segment them — this mirrors how MobGap decouples its GSD stage
+(candidate windows) from WB assembly (the final bout definition), and means a Lab trial can also now
+legitimately split into more than one WB if it contains a >3 s pause.
 
 ## PRESETS
 
@@ -173,10 +332,11 @@ all_ic, all_stride = run_skdh_lab_pipeline(
 | Functional Test (`use_gsd=False`) | — (full recording = one bout) | `GaitLumbar.predict()` directly | No |
 | Lab (`run_skdh_lab_pipeline`) | — (V3D crop window via `parse_mocap_frame_window`) | `GaitLumbar` | No |
 
-`skdh_athome_pipeline.py` also implements its own WB assembly (`_build_wb_from_strides`,
-`_filter_wbs` — same ≥4-strides / ≤3.0 s-gap rules as MobGap's `WbAssembly`) and DMO aggregation
-(`_compute_dmo`, same Mobilise-D thresholds as MobGap's `MobilisedAggregator`) since SKDH doesn't ship
-these itself.
+`skdh_athome_pipeline.py`/`skdh_lab_pipeline.py` call mobgap's own `StrideSelection`/`WbAssembly` directly
+for stride selection and WB assembly (see
+[Stride selection & walking-bout assembly](#stride-selection--walking-bout-assembly-mobilised_wbpy) above) —
+SKDH itself has no equivalent step. DMO aggregation (`_compute_dmo`, At-Home only) is still SKDH-specific
+(same Mobilise-D thresholds as MobGap's `MobilisedAggregator`), since SKDH doesn't ship that either.
 
 **Per-stage algorithm columns** (see [Running a pipeline](#per-stage-algorithm-columns) above) follow
 SKDH's own architecture rather than MobGap's, since SKDH bundles GSD (context/bout detection) and ICD
@@ -225,10 +385,11 @@ pass them in as keyword arguments; the QC module has no pipeline-specific knowle
 
 | Level | Rule | At-Home | Lab | Functional Test |
 |-------|------|:-------:|:---:|:---------------:|
-| Stride | Duration 0.6–2.0 s | MobGap & SKDH | MobGap & SKDH | MobGap & SKDH |
+| Stride | Duration 0.2–3.0 s | MobGap & SKDH | MobGap & SKDH | MobGap & SKDH |
 | Stride | Length ≥ 0.15 m | MobGap & SKDH | MobGap & SKDH | MobGap & SKDH |
-| WB | ≥ 4 strides per bout | MobGap & SKDH | — | — |
-| WB | Gap between strides ≤ 3.0 s | MobGap & SKDH | — | — |
+| WB | ≥ 4 strides per bout | MobGap & SKDH | MobGap & SKDH | MobGap & SKDH |
+| WB | Gap between strides ≤ 3.0 s | MobGap & SKDH | MobGap & SKDH | MobGap & SKDH |
+| WB | First/last stride excluded from parameters (full extent kept for `start`/`end`) | MobGap & SKDH | MobGap & SKDH | MobGap & SKDH |
 | DMO | Only WBs ≥ 10 s contribute (`DMO_MIN_WB_DURATION_S`) | MobGap & SKDH | — | — |
 | Evaluation | IoU overlap ≥ 0.8 (stride matching) | — | MobGap & SKDH | — |
 
