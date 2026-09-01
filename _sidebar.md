@@ -2,12 +2,13 @@
   - [Overview](/)
   - [News](NEWS.md)
 
-- Guides
-  - [Using the GUI](scripts/README.md)
-  - [Viewing Results (report app)](scripts/REPORT_APP_DOC.md)
+- User Guide
+  - [Running an analysis](scripts/README.md)
+  - [Pipeline options explained](guide/pipeline-options.md)
+  - [Reading the results](scripts/REPORT_APP_DOC.md)
   - [Exporting to R](scripts/long_format_exports/README.md)
 
-- Reference
+- Developer Reference
   - [Algorithm Comparison](ALGORITHM_COMPARISON.md)
   - [Preprocessing](src/ug3imu/preprocessing/README.md)
   - [Mocap (V3D)](src/ug3imu/mocap/README.md)

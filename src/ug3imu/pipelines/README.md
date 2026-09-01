@@ -1,30 +1,44 @@
 # `ug3imu.pipelines`
 
-The core of the toolbox: builds MobGap/SKDH-compatible datasets from raw IMU files, runs gait-detection
-pipelines on them, and writes results + QC reports in a consistent directory layout across all three
-scenarios (Lab, At-Home, Functional Test) and both engines (MobGap, SKDH).
+The core of the toolbox: builds MobGap/SKDH-compatible datasets from raw IMU files, runs gait detection
+on them through **one configurable engine** (`run_unified_pipeline`), and writes results + QC reports in
+a consistent directory layout across all three scenarios (Lab, At-Home, Functional Test) and both
+gait-analysis engines (MobGap, SKDH).
 
 [← Back to project README](../../../README.md)
+
+> **Read this first:** [Unified engine](#unified-engine--gsd--gait--turn-algorithms-freely-combinable)
+> below is the current entry point. The three older sections
+> ([Three windowing modes](#three-windowing-modes-one-factory), [SKDH pipelines](#skdh-pipelines),
+> [PRESETS](#presets)) describe the internal MobGap builder and the now-unexported SKDH functions the
+> engine calls under the hood — kept for reference, not the public API.
 
 ## Files
 
 | File | Role |
 |------|------|
-| [pipeline_factory.py](pipeline_factory.py) | **Unified MobGap factory** — `create_pipeline()`, `run_pipeline_on_dataset()`, algorithm registries, presets. Used for all three MobGap scenarios. |
+| [stage_registry.py](stage_registry.py) | `PipelineConfig`, `GSD_ENGINES` / `GAIT_ENGINES` registries, `PRESETS` (single source of truth for the GUI), `resolve_algorithm_name()`, `stage_algorithm_values()` |
+| [unified_engine.py](unified_engine.py) | **The public entry point** — `run_unified_pipeline()`, `detect_gsd()`, `_ReplayGSD`, `expand_configs()` |
+| [pipeline_factory.py](pipeline_factory.py) | Low-level MobGap builder the engine calls — `create_pipeline()`, `run_pipeline_on_dataset()`, `GSD_ALGO_MAP` / `ICD_ALGO_MAP` / `LRC_ALGO_MAP`, `FullWindowGSD` |
 | [dataset_generation.py](dataset_generation.py) | `build_dataset_from_file_list()` — the dataset builder used by the GUI (works for lab, at-home, and functional test alike) |
 | [athome_dataset_generation.py](athome_dataset_generation.py) | `INPUT_FORMATS` registry, file discovery (`discover_files_by_keyword`, `discover_athome_files`) |
-| [lab_pipeline.py](lab_pipeline.py) | `DummyGSD` — treats the mocap crop window as a single gait sequence (MobGap lab windowing) |
-| [skdh_lab_pipeline.py](skdh_lab_pipeline.py) | `run_skdh_lab_pipeline()` — SKDH `GaitLumbar` on the V3D-cropped window |
-| [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | `create_skdh_pipeline()`, `run_skdh_athome_pipeline()` — SKDH bout detection (`PredictGaitLumbarLgbm`) + `GaitLumbar`, DMO aggregation |
-| [mobilised_wb.py](mobilised_wb.py) | `WBA_RULES`, `trim_edge_strides_and_summarize()` — the shared Mobilise-D-standard WB-assembly rules and first/last-stride trim, used identically by `pipeline_factory.py`, `skdh_lab_pipeline.py`, and `skdh_athome_pipeline.py` (see [Stride selection & walking-bout assembly](#stride-selection--walking-bout-assembly-mobilised_wbpy) below) |
-| [qc_templates.py](qc_templates.py) | Shared QC text-block builders — MobGap and SKDH both render through these so output format is identical |
+| [lab_pipeline.py](lab_pipeline.py) | `DummyGSD` — treats a fixed crop window as a single gait sequence (`windowing="ref"`) |
+| [skdh_lab_pipeline.py](skdh_lab_pipeline.py) | Home of SKDH helpers the engine reuses — `gait_lumbar_df_to_stride_df()`, `_ic_time_to_abs_s()`. `run_skdh_lab_pipeline()` is retained but **no longer exported**. |
+| [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | Home of more SKDH helpers — `_compute_dmo()`, `_skdh_athome_qc_kwargs()`, `_plot_ic_overlay()`. `run_skdh_athome_pipeline()` / `create_skdh_pipeline()` are retained but **no longer exported**. |
+| [mobilised_wb.py](mobilised_wb.py) | `WBA_RULES`, `trim_edge_strides_and_summarize()` — the shared Mobilise-D-standard WB-assembly rules and first/last-stride trim, applied identically to the MobGap and SKDH gait paths (see [Stride selection & walking-bout assembly](#stride-selection--walking-bout-assembly-mobilised_wbpy) below) |
+| [qc_templates.py](qc_templates.py) | Shared QC text-block builders — the MobGap and SKDH gait paths both render through these so output format is identical |
 
-`build_dataset_from_folder()` (dataset_generation.py), `build_athome_dataset_from_files()`
-(athome_dataset_generation.py), and `athome_pipeline.py` in its entirety (a MobGap at-home pipeline
-predating `pipeline_factory.py`, superseded by `create_pipeline(windowing="gsd")` +
-`run_pipeline_on_dataset()`) were removed as dead code — none were imported by `scripts/imu_pipeline.py`.
-`legacy_code/athome_monitoring.py` still imports from the now-deleted `athome_pipeline.py`; that script is
-archived/not run, so its import breaking is expected, not a regression.
+`ug3imu.pipelines` exports: `build_dataset_from_file_list`, `INPUT_FORMATS`, `discover_files_by_keyword`,
+`discover_athome_files`, `run_unified_pipeline`, `PipelineConfig`, `expand_configs`, `detect_gsd`,
+`PRESETS`, `GSD_ENGINES`, `GAIT_ENGINES`, `stage_algorithm_values`, `resolve_algorithm_name`, plus the
+low-level `create_pipeline` / `run_pipeline_on_dataset` / `FullWindowGSD` / `DummyGSD`. It does **not**
+export `run_skdh_lab_pipeline` / `run_skdh_athome_pipeline` / `create_skdh_pipeline` any more — those
+modules survive only as the home of helpers `unified_engine` reuses.
+
+`build_dataset_from_folder()`, `build_athome_dataset_from_files()`, and `athome_pipeline.py` in its
+entirety were removed as dead code. `legacy_code/athome_monitoring.py` still imports the removed
+`athome_pipeline.py` / `run_skdh_athome_pipeline`; that script is archived / not run, so its import
+breaking is expected, not a regression.
 
 ## Unified engine — GSD / Gait / Turn algorithms freely combinable
 
@@ -140,14 +154,22 @@ archived / not run, so the broken import is expected, not a regression.
 
 ## Three windowing modes, one factory
 
+> Internal detail — `PipelineConfig.windowing` is the user-facing knob; the values below are what
+> `create_pipeline` sees after `unified_engine` translates the config. `"ref"` in the config maps to
+> `"mocap"` here.
+
 `create_pipeline(windowing=...)` in `pipeline_factory.py` builds a `mobgap.pipeline.GenericMobilisedPipeline`
 that differs only in how the gait-sequence-detection (GSD) step is configured:
 
-| `windowing` | GSD component | Requires | Use case |
-|-------------|----------------|----------|----------|
-| `"gsd"` | A real algorithm from `GSD_ALGO_MAP` (default `GsdIluz`) | — | At-Home: auto-detect bout boundaries |
-| `"mocap"` | `DummyGSD` (from [lab_pipeline.py](lab_pipeline.py)) | V3D TXT via `mocap_folder=` | Lab: window = mocap crop, no detection |
-| `"full"` | `FullWindowGSD` (defined in `pipeline_factory.py`) | — | Functional Test: entire recording = one window |
+| `windowing` | `PipelineConfig` value | GSD component | Use case |
+|-------------|------------------------|----------------|----------|
+| `"gsd"` | `"gsd"` | `_ReplayGSD` replaying the pre-computed `gs_list` (from any GSD engine), or a `GSD_ALGO_MAP` class via `gsd_override` | At-Home: auto-detected bout boundaries |
+| `"mocap"` | `"ref"` | `DummyGSD` (from [lab_pipeline.py](lab_pipeline.py)) — one window = the mocap / INDIP crop | Lab: no detection |
+| `"full"` | `"full"` | `FullWindowGSD` (defined in `pipeline_factory.py`) | Functional Test: entire recording = one window |
+
+`create_pipeline` also takes a `gsd_override=` argument (added for the unified engine): when set, that
+object is used as the GSD component directly, which is how `_ReplayGSD` injects a `gs_list` produced by
+*any* engine (MobGap `GsdIluz`/…, SKDH `PredictGaitLumbarLgbm`) into MobGap's per-GS iteration.
 
 Everything downstream (IC detection, laterality, cadence, stride length, stride selection/filtering, WB
 assembly, turn detection, optional DMO) is identical across the three modes — only the GSD step changes.
@@ -197,37 +219,43 @@ unmodified output instead:
   edge strides' own duration would make every WB look artificially shorter/later-starting than it actually
   was, and a WB is never dropped outright just because few strides remain after trimming.
 
-`create_pipeline()` wires `stride_selection=StrideSelection()` and `wba=WbAssembly(rules=WBA_RULES)` into
-`GenericMobilisedPipeline`; `run_pipeline_on_dataset()` calls `trim_edge_strides_and_summarize()` right after
-`pipeline.run(dp)` and overwrites `res.per_stride_parameters_`/`res.per_wb_parameters_` in place (also
-re-running the DMO threshold mask + aggregation against the trimmed WBs when DMO is enabled, mirroring what
-`GenericMobilisedPipeline.run()` does internally). `skdh_lab_pipeline.py` and `skdh_athome_pipeline.py` call
-`StrideSelection()` → `WbAssembly(rules=WBA_RULES)` → `trim_edge_strides_and_summarize()` on their own
-GaitLumbar-derived stride tables the same way. SKDH At-Home pools strides from every bout
-`PredictGaitLumbarLgbm` detects (rather than keeping SKDH's own per-bout grouping as the final WB boundary)
-and lets `WbAssembly`'s own break rule re-segment them — this mirrors how MobGap decouples its GSD stage
-(candidate windows) from WB assembly (the final bout definition), and means a Lab trial can also now
-legitimately split into more than one WB if it contains a >3 s pause.
+For the MobGap gait path, `create_pipeline()` wires `stride_selection=StrideSelection()` and
+`wba=WbAssembly(rules=WBA_RULES)` into `GenericMobilisedPipeline`; `run_pipeline_on_dataset()` calls
+`trim_edge_strides_and_summarize()` right after `pipeline.run(dp)` and overwrites
+`res.per_stride_parameters_`/`res.per_wb_parameters_` in place (also re-running the DMO threshold mask +
+aggregation against the trimmed WBs when DMO is enabled). For the SKDH gait path,
+`unified_engine._run_skdh_gait()` calls `StrideSelection()` → `WbAssembly(rules=WBA_RULES)` →
+`trim_edge_strides_and_summarize()` on the GaitLumbar-derived stride table the same way. Both engines
+pool strides across all GSD windows and let `WbAssembly`'s own break rule define the final WB boundaries
+(rather than treating a GSD window as one WB), so a Lab trial with a >3 s pause can legitimately split
+into more than one WB.
 
 ## PRESETS
 
-`PRESETS` in `pipeline_factory.py` is the single source of truth the GUI reads to populate preset buttons:
+`PRESETS` lives in [`stage_registry.py`](stage_registry.py) (the old `pipeline_factory.PRESETS` was
+removed). It's the single source of truth the GUI reads to populate the preset buttons — one entry per
+preset, in the unified `PipelineConfig` shape plus a few GUI-only flags:
 
 ```python
 PRESETS = {
-    "At-Home":          {"windowing": "gsd",   "enable_dmo": True,  "evaluation": False, ...},
-    "Lab":               {"windowing": "mocap", "enable_dmo": False, "evaluation": True,  ...},
-    "Functional Test":   {"windowing": "full",  "enable_dmo": False, "evaluation": False, ...},
+    "At-Home": {
+        "windowing": "gsd", "gsd_engine": "mobgap", "gsd_algorithm": "GsdIluz",
+        "gait_engine": "mobgap", "icd_algorithm": "IcdIonescu", "lrc_algorithm": "LrcUllrich",
+        "turn": True, "enable_dmo": True,
+        "evaluation": False, "plot_wb": True, "plot_ic": False,
+    },
+    "Lab":             {"windowing": "ref",  "enable_dmo": False, "evaluation": True,  ...},
+    "Functional Test": {"windowing": "full", "enable_dmo": False, "evaluation": False, ...},
 }
 ```
 
-`data_layout` (`"athome"` vs `"lab"`) tells the GUI which folder-discovery convention to use — see
-[athome_dataset_generation.py](#file-discovery--athome_dataset_generationpy) below.
+`_apply_preset(name)` in `scripts/imu_pipeline.py` copies these values into the GUI's state variables
+and refreshes which conditional rows are shown.
 
 ## Building a dataset
 
 ```python
-from ug3imu.pipelines import build_dataset_from_file_list, create_pipeline, run_pipeline_on_dataset
+from ug3imu.pipelines import build_dataset_from_file_list, run_unified_pipeline, PipelineConfig
 
 dataset = build_dataset_from_file_list(
     file_list=files, metadata_csv="participants.csv",
@@ -254,30 +282,33 @@ folders, nested at-home folders, or a mixed file list, because the caller (usual
 ## Running a pipeline
 
 ```python
-pipeline = create_pipeline(windowing="gsd", gsd_algorithm="GsdIluz",
-                           icd_algorithm="IcdIonescu", enable_dmo=True)
-run_pipeline_on_dataset(dataset, pipeline, output_path="results/TB017/AX6",
-                        algorithm_name="GsdIluz_IcdIonescu", imu_fs=100,
-                        enable_dmo=True, plot_wb=True, plot_ic=True,
-                        gsd_algorithm="GsdIluz", icd_algorithm="IcdIonescu")
+cfg = PipelineConfig(
+    windowing="gsd",
+    gsd_engine="mobgap", gsd_algorithm="GsdIluz",
+    gait_engine="mobgap", icd_algorithm="IcdIonescu", lrc_algorithm="LrcUllrich",
+    turn=True, enable_dmo=True,
+)
+run_unified_pipeline(dataset, cfg, output_path="results/TB017/AX6", imu_fs=100,
+                     algorithm_name=resolve_algorithm_name(cfg))
 ```
 
-`run_pipeline_on_dataset` iterates every trial in the dataset, runs the pipeline, and writes whatever the
-result object has (`gs_list_`, `raw_ic_list_`, `per_stride_parameters_`, `per_wb_parameters_`,
-`aggregated_parameters_`, `raw_turn_list_`) to the matching subfolder — see
-[Output directory layout](#output-directory-layout) below. `step_time_s` is computed here as a post-hoc
-addition to the stride table, since MobGap doesn't produce it natively:
-`step_time_s[i] = (IC[i+1] − IC[i]) / imu_fs`.
+`run_unified_pipeline` validates the config, runs the GSD stage, dispatches to the MobGap or SKDH gait
+path, and writes `gs_list` / raw ICs / per-stride / per-WB / aggregated DMO / turn tables to the matching
+subfolder — see [Output directory layout](#output-directory-layout) below. Internally the MobGap gait path
+delegates to `create_pipeline` + `run_pipeline_on_dataset` (iterating every trial, running
+`GenericMobilisedPipeline`, writing `gs_list_` / `raw_ic_list_` / `per_stride_parameters_` /
+`per_wb_parameters_` / `aggregated_parameters_` / `raw_turn_list_`). `step_time_s` is added post-hoc to
+the stride table since MobGap doesn't produce it natively: `step_time_s[i] = (IC[i+1] − IC[i]) / imu_fs`.
 
 ### Per-stage algorithm columns
 
 Besides `algorithm_name` (the full pipeline identity baked into every output filename, e.g.
-`GsdIluz_IcdIonescu_LrcUllrich`), every row of `gs`/`ic`/`stride`/`wb`/`turn` output also carries one column
-per pipeline stage — `gsd_algorithm`, `icd_algorithm`, `lrc_algorithm`, `cadence_algorithm`,
-`stride_length_algorithm`, `walking_speed_algorithm`, `turn_algorithm` — written by
-`_stage_algorithm_columns()` from the `gsd_algorithm`/`icd_algorithm`/`lrc_algorithm` arguments passed to
-`run_pipeline_on_dataset` (the last four stages aren't user-selectable in this codebase, so those columns
-are constant today; kept for schema uniformity).
+`GsdIluz_IcdIonescu_LrcUllrich` or `GsdIluz_SKDH_apcwt`), every row of `gs`/`ic`/`stride`/`wb`/`turn`
+output also carries one column per pipeline stage — `gsd_algorithm`, `icd_algorithm`, `lrc_algorithm`,
+`cadence_algorithm`, `stride_length_algorithm`, `walking_speed_algorithm`, `turn_algorithm` — filled by
+`stage_registry.stage_algorithm_values(config)` (MobGap path) / the equivalent SKDH labels. For the
+MobGap engine `cadence`/`stride_length`/`walking_speed` aren't user-selectable so those columns are
+constant (`CadFromIc`/`SlZijlstra`/`WsNaive`); for the SKDH engine they're all `SKDH_GaitLumbar`.
 
 This exists because different evaluation questions depend on different, *smaller* subsets of the full
 pipeline than the flat `algorithm_name` implies:
@@ -296,57 +327,32 @@ seemingly-different "algorithms" in the GSD Detection / IC tabs. See
 [`metrics/gsd_evaluation.py`](../metrics/README.md#gsd--wb-evaluation-for-at-home-gsd_evaluationpy) and
 [`indip.batch_ic_analysis_indip_athome`](../indip/README.md).
 
-`windowing != "gsd"` (Lab modes without a real GSD run) still gets a `gsd_algorithm` value rather than a
-blank one: `"mocap_windowed"` for `windowing="mocap"` (DummyGSD — window comes from the mocap crop), or
-`"full_window"` for `windowing="full"` (FullWindowGSD). SKDH's `gsd_algorithm`/`icd_algorithm` columns
-follow its own architecture instead (context detection vs. `gait_event_method`) — see
-[SKDH pipelines](#skdh-pipelines) below.
+`windowing != "gsd"` (Lab / Functional modes without a real GSD run) still gets a `gsd_algorithm` value
+rather than a blank one: `"mocap_windowed"` for `windowing="ref"` (DummyGSD — window comes from the
+mocap / INDIP crop) or `"full_window"` for `windowing="full"` (FullWindowGSD). When the GSD engine is
+SKDH, `gsd_algorithm` is `"SKDH_PredictGaitLumbarLgbm"`. When the gait engine is SKDH, `icd_algorithm`
+is `f"SKDH_{gait_event_method}"` (`"SKDH_AP CWT"` / `"SKDH_Vertical CWT"`) and
+`lrc_algorithm`/`cadence_algorithm`/`stride_length_algorithm`/`walking_speed_algorithm` are all
+`"SKDH_GaitLumbar"`.
 
 ## SKDH pipelines
 
-SKDH doesn't have a `GenericMobilisedPipeline`-equivalent single abstraction, so `skdh_lab_pipeline.py` and
-`skdh_athome_pipeline.py` each implement the full read → detect → filter → save loop directly, mirroring
-the MobGap output format so both engines' CSVs have compatible columns (see
+> Internal detail — these functions are **no longer exported** and are not called directly by the GUI.
+> The SKDH gait path now runs through `unified_engine._run_skdh_gait()` (see
+> [How the two engines are bridged](#how-the-two-engines-are-bridged) above). `skdh_lab_pipeline.py` /
+> `skdh_athome_pipeline.py` survive only as the home of the helpers `unified_engine` reuses:
+> `gait_lumbar_df_to_stride_df`, `_ic_time_to_abs_s`, `_compute_dmo`, `_skdh_athome_qc_kwargs`,
+> `_plot_ic_overlay`.
+
+SKDH has no `GenericMobilisedPipeline`-equivalent abstraction. Its `GaitLumbar.predict()` bundles IC
+detection (`gait_event_method` = `"AP CWT"` / `"Vertical CWT"`), laterality, cadence, stride length and
+walking speed into one atomic call and does not accept externally supplied ICs. The unified engine feeds
+it the GSD stage's windows via `gait_bouts=` (one call per window), converts the per-IC output to a
+`start`/`end` stride table with `gait_lumbar_df_to_stride_df`, then runs the same shared Mobilise-D tail
+(`StrideSelection` → `WbAssembly(WBA_RULES)` → `trim_edge_strides_and_summarize`) plus `_compute_dmo` for
+At-Home DMO aggregation (same Mobilise-D thresholds as MobGap's `MobilisedAggregator`). Output columns
+mirror the MobGap format so both engines' CSVs are directly comparable (see
 [metrics/README.md — stride columns by pipeline](../metrics/README.md#stride-csv-columns-by-pipeline)).
-
-```python
-from ug3imu.pipelines import run_skdh_athome_pipeline, run_skdh_lab_pipeline
-
-gs, ic, stride, wb, dmo = run_skdh_athome_pipeline(
-    file_list=files, metadata_csv="participants.csv",
-    sampling_rate_hz=100, device="AX6", output_path="results/",
-)
-# Functional test: same call with use_gsd=False, enable_dmo=False
-# (GaitLumbar.predict() runs on the full recording — no PredictGaitLumbarLgbm bout detection)
-
-all_ic, all_stride = run_skdh_lab_pipeline(
-    imu_folder="imu/TB017/AX6_Sync/", txt_folder="mocap/TB017/V3D/",
-    metadata_csv="participants.csv", sampling_rate_hz=100,
-    device="AX6", output_path="results/",
-)
-```
-
-| | GSD step | Gait step | DMO |
-|---|----------|-----------|-----|
-| At-Home (`use_gsd=True`) | `PredictGaitLumbarLgbm` (bout detection) | `GaitLumbar` | Yes (WB ≥ 10 s) |
-| Functional Test (`use_gsd=False`) | — (full recording = one bout) | `GaitLumbar.predict()` directly | No |
-| Lab (`run_skdh_lab_pipeline`) | — (V3D crop window via `parse_mocap_frame_window`) | `GaitLumbar` | No |
-
-`skdh_athome_pipeline.py`/`skdh_lab_pipeline.py` call mobgap's own `StrideSelection`/`WbAssembly` directly
-for stride selection and WB assembly (see
-[Stride selection & walking-bout assembly](#stride-selection--walking-bout-assembly-mobilised_wbpy) above) —
-SKDH itself has no equivalent step. DMO aggregation (`_compute_dmo`, At-Home only) is still SKDH-specific
-(same Mobilise-D thresholds as MobGap's `MobilisedAggregator`), since SKDH doesn't ship that either.
-
-**Per-stage algorithm columns** (see [Running a pipeline](#per-stage-algorithm-columns) above) follow
-SKDH's own architecture rather than MobGap's, since SKDH bundles GSD (context/bout detection) and ICD
-(`gait_event_method`) into one `pipeline.run()` call: `gsd_algorithm` = `"SKDH_PredictGaitLumbarLgbm"`
-(constant — bout boundaries don't depend on `gait_event_method`) or `"full_window"` when `use_gsd=False`
-(At-Home) / always for Lab (mocap/INDIP-cropped, no real GSD step — same `"mocap_windowed"` convention
-MobGap's `windowing="mocap"` uses); `icd_algorithm` = `f"SKDH_{gait_event_method}"` (varies: `"SKDH_AP CWT"`
-or `"SKDH_Vertical CWT"`). `lrc_algorithm`/`cadence_algorithm`/`stride_length_algorithm`/
-`walking_speed_algorithm` are all `"SKDH_GaitLumbar"` — bundled into the same call, no user-selectable
-alternative; `turn_algorithm` is `"N/A"` since this pipeline doesn't do turn detection.
 
 ## File discovery (`athome_dataset_generation.py`)
 
@@ -432,20 +438,23 @@ summary block — keep this in sync with whatever columns `_compute_dmo` (SKDH) 
 
 ## Supported algorithms
 
-| Pipeline | Stage | Algorithm | Registry |
-|----------|-------|-----------|----------|
-| MobGap lab | GSD | `DummyGSD` | [lab_pipeline.py](lab_pipeline.py) |
-| MobGap | GSD | `GsdIluz` (default), `GsdIonescu`, `GsdAdaptiveIonescu` | `GSD_ALGO_MAP` |
-| MobGap | IC | `IcdIonescu` (default), `IcdShinImproved`, `IcdHKLeeImproved` | `ICD_ALGO_MAP` |
-| MobGap | Laterality | `LrcUllrich` (default), `LrcMansour`, `LrcMcCamley` | `LRC_ALGO_MAP` |
-| SKDH lab | IC | `GaitLumbar` on V3D window (no GSD) | — |
-| SKDH | GSD + IC | `PredictGaitLumbarLgbm` + `GaitLumbar` | — |
+| Stage | Engine | Algorithms | Registry |
+|-------|--------|------------|----------|
+| GSD | `mobgap` | `GsdIluz` (default), `GsdIonescu`, `GsdAdaptiveIonescu` | `GSD_ALGO_MAP` / `stage_registry.GSD_ENGINES` |
+| GSD | `skdh` | `PredictGaitLumbarLgbm` | `stage_registry.GSD_ENGINES` |
+| GSD | — | `windowing="ref"` → `DummyGSD`; `windowing="full"` → `FullWindowGSD` | [lab_pipeline.py](lab_pipeline.py) / [pipeline_factory.py](pipeline_factory.py) |
+| Gait — IC | `mobgap` | `IcdIonescu` (default), `IcdShinImproved`, `IcdHKLeeImproved` | `ICD_ALGO_MAP` / `stage_registry.GAIT_ENGINES` |
+| Gait — laterality | `mobgap` | `LrcUllrich` (default), `LrcMansour`, `LrcMcCamley` | `LRC_ALGO_MAP` |
+| Gait — cadence / stride length / walking speed | `mobgap` | `CadFromIc` / `SlZijlstra` / `WsNaive` (fixed) | `create_pipeline()` args |
+| Gait — IC + laterality + all parameters | `skdh` | `GaitLumbar(gait_event_method="AP CWT" \| "Vertical CWT")` — one atomic block | `stage_registry.GAIT_ENGINES` |
+| Turn | `mobgap` | `TdElGohary` (or off) | `create_pipeline()` / `unified_engine` |
 
 ### Adding a new MobGap algorithm
 
-- **GSD**: add the class to `GSD_ALGO_MAP` in [pipeline_factory.py](pipeline_factory.py).
-- **IC**: add the class to `ICD_ALGO_MAP`.
-- **Laterality**: add the class to `LRC_ALGO_MAP`.
+- **GSD**: add the class to `GSD_ALGO_MAP` in [pipeline_factory.py](pipeline_factory.py) **and** to the
+  `"mobgap"` list in `stage_registry.GSD_ENGINES`.
+- **IC**: add to `ICD_ALGO_MAP` **and** `stage_registry.GAIT_ENGINES["mobgap"]["icd"]`.
+- **Laterality**: add to `LRC_ALGO_MAP` **and** `stage_registry.GAIT_ENGINES["mobgap"]["lrc"]`.
 - **Other stages** (stride length, cadence, walking speed, turn detection): swap the corresponding
   argument in `create_pipeline()` — any class implementing the matching MobGap interface can be dropped
   in directly (e.g. replace `SlZijlstra()` with another `stride_length_calculation` implementation).

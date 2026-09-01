@@ -9,7 +9,7 @@ folder has no `__init__.py`; each file is a standalone script.
 
 | File | Purpose |
 |------|---------|
-| [imu_pipeline.py](imu_pipeline.py) | **Recommended entry point.** Unified GUI for Lab / At-Home / Functional Test, MobGap + SKDH tabs |
+| [imu_pipeline.py](imu_pipeline.py) | **Recommended entry point.** Unified GUI for Lab / At-Home / Functional Test — one Pipeline tab, per-stage engine (MobGap / SKDH) selection |
 | [report_app.py](report_app.py) | Streamlit results dashboard — see [REPORT_APP_DOC.md](REPORT_APP_DOC.md) |
 | [aggregate_ic_results.py](aggregate_ic_results.py) | CLI: aggregates per-subject `Evaluation/` CSVs into cross-subject summary tables |
 | [task_config.json](task_config.json) | Task-keyword presets edited via `imu_pipeline.py`'s **Settings…** dialog — see below |
@@ -22,10 +22,14 @@ conda activate ug3imu
 python scripts/imu_pipeline.py
 ```
 
-Single entry point for all three workflows (Lab, At-Home, Functional Test), both MobGap and SKDH engines.
-The GUI is a thin layer: it discovers files, builds a dataset, and calls into
+Single entry point for all three workflows (Lab, At-Home, Functional Test), with a single **Pipeline**
+tab where each stage (GSD / Gait / Turn) picks its engine (MobGap or SKDH) and algorithm. The GUI is a
+thin layer: it discovers files, builds a dataset, and calls `run_unified_pipeline` in
 [`ug3imu.pipelines`](../src/ug3imu/pipelines/README.md) — almost no gait-analysis logic lives in this
 file itself.
+
+**What each option on the Pipeline tab means and how to choose:**
+[Pipeline options explained](../guide/pipeline-options.md).
 
 ### Shared controls
 
@@ -46,16 +50,18 @@ whole underscore-delimited tokens of the filename stem against the task's keywor
 whitelist that keeps only the lumbar sensor file when a trial has multiple placements) are in
 [pipelines/README.md — File discovery](../src/ug3imu/pipelines/README.md#file-discovery-athome_dataset_generationpy).
 
-### Preset buttons (MobGap and SKDH tabs)
+### Preset buttons
 
 | Preset | Windowing | DMO | Evaluation | Typical use |
 |--------|-----------|-----|------------|-------------|
 | **At-Home** | GSD (auto-detect bouts) | On | Off | Free-living multi-bout recordings |
-| **Lab** | Mocap window | Off | On | Synchronised lab recordings with V3D/INDIP reference |
+| **Lab** | Reference window | Off | On | Synchronised lab recordings with V3D/INDIP reference |
 | **Functional Test** | Full recording (no GSD) | Off | Off | Short structured tasks (TUG, 10MWT, 6MWT, etc.) |
 
-Presets are read from `PRESETS` in [pipeline_factory.py](../src/ug3imu/pipelines/pipeline_factory.py) —
-see [pipelines/README.md](../src/ug3imu/pipelines/README.md#presets) for the full config each preset sets.
+Each preset fills in every stage's engine + algorithm + flags at once. Presets are read from `PRESETS`
+in [stage_registry.py](../src/ug3imu/pipelines/stage_registry.py) — see
+[pipelines/README.md](../src/ug3imu/pipelines/README.md#presets) for the full config each one sets, and
+[Pipeline options explained](../guide/pipeline-options.md) for what to change afterwards.
 
 ### Evaluation controls
 

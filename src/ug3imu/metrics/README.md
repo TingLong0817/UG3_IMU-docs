@@ -232,7 +232,7 @@ without inflating spurious strides, but leaves the strict-0.8 count near unchang
 
 ## Where this is consumed
 
-The GUI's **Evaluate Results** button (both MobGap and SKDH tabs, Lab preset) in
+The GUI's **Evaluate Results** button (Pipeline tab, Lab preset) in
 [`scripts/imu_pipeline.py`](../../../scripts/imu_pipeline.py) calls all three `batch_*` families — once
 per detected algorithm, against whichever reference type (Mocap V3D or INDIP) is selected — and writes
 results to `{Output Root}/{Subject}/{Device}/Evaluation/`. For At-Home tasks (task keyword `outoflab`),
