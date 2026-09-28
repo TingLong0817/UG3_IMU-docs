@@ -49,13 +49,9 @@ from ug3imu.metrics import batch_ic_analysis_multi_algo, process_ic_trial, extra
   accuracy only depends on the GSD (windowing) + ICD pipeline stages, not LRC/etc (see
   [pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns)), so within
   each trial only one file per `("{gsd_algorithm}_{icd_algorithm}", param_tag)` combination is evaluated —
-  read from the file's own `gsd_algorithm`/`icd_algorithm` columns plus a param tag built from whichever of
-  the 7 tunable-knob columns are present and non-default (see
-  [pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters)),
-  falling back to the full filename tag for files that predate either. Otherwise the same IC result would
-  be scored once per LRC choice it happened to be generated alongside, or — before the param tag was added
-  here — two parameter-sweep runs sharing the same algorithm choice would collide and one would silently
-  disappear from the output.
+  `param_tag` is built from whichever of the 7 tunable-knob columns are present and non-default (see
+  [pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters)) so
+  parameter-sweep runs of the same algorithm choice don't collide.
 - `extract_trial_key(name)` — `"_".join(stem.split("_")[:4])`. This 4-part key convention (subject, date,
   task, device/run — the exact meaning of parts 2–4 varies by naming scheme) is how every evaluation
   function pairs an IMU output file to its reference file.
@@ -182,12 +178,10 @@ apply. Instead:
   on different parts of the pipeline (see
   [pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns)):
   - `error_all` — one row per bout-level matched WB pair with `{param}_ref/_imu/_error` (same schema as
-    `wb_evaluation.py`'s output, so it's written to the same `wb_error_indip_*.csv` filename and consumed
-    by the existing Walking Bouts tab unmodified). `algorithm` is the **full** `{gsd}_{icd}_{lrc}` pipeline
-    name plus a param tag (e.g. `_p[skdh_ic_prom_factor=0.3,...]`) whenever any of the 7 tunable knobs
-    differ from default — every `*_wb.csv` file is evaluated, since per-bout parameter values depend on the
-    whole chain, so two parameter-sweep runs must stay distinguishable here even though nothing is deduped
-    away (see [pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters)).
+    `wb_evaluation.py`'s output, written to the same `wb_error_indip_*.csv` filename). `algorithm` is the
+    **full** `{gsd}_{icd}_{lrc}` pipeline name plus a param tag when any of the 7 tunable knobs differ from
+    default (see [pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters)) —
+    every `*_wb.csv` file is evaluated, so the tag is what keeps two parameter-sweep runs distinguishable.
   - `metrics_all` — one row per trial × **GSD algorithm** (not the full pipeline name) combining all three
     functions above: bout-level `tp_wb`/`fp_wb`/`fn_wb`; unmatched totals `reference_num_gs`/
     `detected_num_gs`/`reference_gs_duration_s`/`detected_gs_duration_s`/... (mobgap's own naming); and

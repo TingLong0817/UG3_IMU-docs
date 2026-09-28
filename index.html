@@ -7,6 +7,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
   <meta name="description" content="IMU gait-analysis toolbox docs — MAI Lab">
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <style>
+    /* Tone down the vue theme's default orange inline-code/token color —
+       these docs are dense with inline `code`, so the stock #e96900 reads
+       as a wall of orange. Reuse the theme's own teal accent instead. */
+    code, .token.function, .token.keyword, .token.tag, .token.number,
+    .token.property, .token.attr-name { color: #2c6e5c !important; }
+    code { background-color: #f4f6f5; }
+    pre code, pre[class*="lang-"] { background-color: transparent; }
+  </style>
 </head>
 <body>
   <div id="app"></div>

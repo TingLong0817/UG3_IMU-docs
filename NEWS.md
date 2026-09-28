@@ -5,41 +5,28 @@ live feed of the GitHub history.
 
 ## 2026-09-28 — SKDH/MobGap parameters are tunable from the GUI, and correctly tracked through evaluation
 
-Seven previously-hardcoded knobs — SKDH `GaitLumbar`'s `ic_prom_factor`/`fc_prom_factor` (AP CWT),
-`wavelet_scale`/`use_cwt_scale_relation` (Vertical CWT), `height_factor` and `max_stride_time` (either
-method), plus MobGap `SlZijlstra`'s `step_length_scaling_factor` — are now adjustable per run via a small
-"⚙ Params" button next to the SKDH method row and the MobGap LRC row (GUI: **Pipeline** tab), instead of
-requiring a code edit. See
+Seven previously-hardcoded knobs (SKDH `GaitLumbar`'s prominence/wavelet/height/max-stride-time knobs;
+MobGap `SlZijlstra`'s step-length scaling factor) are now adjustable per run via a "⚙ Params" button in the
+GUI's **Pipeline** tab, instead of requiring a code edit. See
 [pipelines — Tunable SKDH/MobGap parameters](src/ug3imu/pipelines/README.md#tunable-skdhmobgap-parameters)
-and [guide — Fine-tuning an algorithm](docs-site/guide/pipeline-options.md#fine-tuning-an-algorithm--the--params-button).
+and [guide — Fine-tuning an algorithm](docs-site/guide/pipeline-options.md#fine-tuning-an-algorithm-the-params-button).
+SKDH's IC-detection algorithm list also dropped from 5 entries to the 2 real algorithms (`AP CWT`,
+`Vertical CWT`) — the other 3 were fixed presets of these same knobs and could silently conflict with a
+manually-typed value.
 
-As part of this, SKDH's IC-detection algorithm list dropped from 5 entries to the 2 real algorithms
-(`AP CWT`, `Vertical CWT`) — the other 3 were fixed presets of the knobs above, and could silently conflict
-with a manually-typed value once the knobs became independently tunable.
+A parameter-sweep run no longer overwrites its own earlier output (filename gets a tag when values differ
+from default; the values used are written as real columns on every output row). Several evaluation
+functions that deduped by algorithm *choice* only were fixed to fold these knobs into their dedup/labeling
+key too, so two sweep runs sharing a choice no longer collide (`ug3imu.indip`, `metrics.ic_evaluation`,
+`metrics.wb_evaluation`, `metrics.stride_evaluation`, `metrics.gsd_evaluation`).
 
-A parameter-sweep run (same algorithm choice, different knob values) no longer overwrites its own earlier
-output: the filename gets a short tag appended whenever a value differs from default, and the actual values
-used are written as real columns on every output row (self-describing, no separate lookup needed). Three
-gaps were found and fixed after this initially shipped, all only visible once a real sweep was pushed
-through evaluation rather than just the pipeline step: the MobGap gait path and SKDH's own IC table weren't
-carrying these columns through to their output at all; several evaluation functions deduped by algorithm
-*choice* only, so two sweep runs with the same choice but different knob values collided and one silently
-disappeared from the evaluation output (fixed in `ug3imu.indip`, `metrics.ic_evaluation`,
-`metrics.wb_evaluation`, `metrics.stride_evaluation`, and — found last — `metrics.gsd_evaluation`'s
-per-bout `wb_error_indip_outoflab.csv` labeling). Full writeup:
-[pipelines — Three gaps found and fixed after this shipped](src/ug3imu/pipelines/README.md#tunable-skdhmobgap-parameters).
+`report_app.py` now shows a **Params** column next to every Algorithm column, and each results tab has its
+own algorithm/parameter filter, so parameter combinations can be compared within the tab instead of only in
+a separate ledger.
 
-`report_app.py` now shows a **Params** column next to every Algorithm column, and each results tab
-(IC/Stride/Walking Bouts/GSD) has its own algorithm/parameter filter at the top, so different parameter
-combinations can be isolated or compared side by side within the tab you're already looking at — this
-replaced an earlier "Parameter Runs"-tab-only design (kept as a secondary historical list) after feedback
-that comparing results needs to happen at each level, not from one separate ledger.
-
-Also fixed along the way: the pipeline-run-time WB timeline plot (SKDH gait) was built from raw GSD
-candidate windows instead of the final assembled walking bouts, so it could show a very different bout
-count than the same run's evaluation-time plot; and a pandas `.groupby().apply()` edge case
-(`_stride_summary_with_ref`/`_wb_summary` in `report_app.py`) crashed whenever exactly one
-algorithm/parameter combination was selected.
+Also fixed: the SKDH pipeline-run-time WB timeline plot was built from raw GSD candidate windows instead of
+the final assembled walking bouts; and a pandas `.groupby().apply()` edge case in `report_app.py` crashed
+whenever exactly one algorithm/parameter combination was selected.
 
 ## 2026-09-01 — At-Home WB match threshold is adjustable in the GUI
 
