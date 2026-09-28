@@ -48,10 +48,14 @@ from ug3imu.metrics import batch_ic_analysis_multi_algo, process_ic_trial, extra
   `.txt` file. Returns `(error_all, metrics_all)` concatenated across trials/algorithms. IC-detection
   accuracy only depends on the GSD (windowing) + ICD pipeline stages, not LRC/etc (see
   [pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns)), so within
-  each trial only one file per `("{gsd_algorithm}_{icd_algorithm}")` combination is evaluated — read from
-  the file's own `gsd_algorithm`/`icd_algorithm` columns (falls back to the full filename tag for files
-  that predate them). Otherwise the same IC result would be scored once per LRC choice it happened to be
-  generated alongside.
+  each trial only one file per `("{gsd_algorithm}_{icd_algorithm}", param_tag)` combination is evaluated —
+  read from the file's own `gsd_algorithm`/`icd_algorithm` columns plus a param tag built from whichever of
+  the 7 tunable-knob columns are present and non-default (see
+  [pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters)),
+  falling back to the full filename tag for files that predate either. Otherwise the same IC result would
+  be scored once per LRC choice it happened to be generated alongside, or — before the param tag was added
+  here — two parameter-sweep runs sharing the same algorithm choice would collide and one would silently
+  disappear from the output.
 - `extract_trial_key(name)` — `"_".join(stem.split("_")[:4])`. This 4-part key convention (subject, date,
   task, device/run — the exact meaning of parts 2–4 varies by naming scheme) is how every evaluation
   function pairs an IMU output file to its reference file.
@@ -180,7 +184,10 @@ apply. Instead:
   - `error_all` — one row per bout-level matched WB pair with `{param}_ref/_imu/_error` (same schema as
     `wb_evaluation.py`'s output, so it's written to the same `wb_error_indip_*.csv` filename and consumed
     by the existing Walking Bouts tab unmodified). `algorithm` is the **full** `{gsd}_{icd}_{lrc}` pipeline
-    name — every `*_wb.csv` file is evaluated, since per-bout parameter values depend on the whole chain.
+    name plus a param tag (e.g. `_p[skdh_ic_prom_factor=0.3,...]`) whenever any of the 7 tunable knobs
+    differ from default — every `*_wb.csv` file is evaluated, since per-bout parameter values depend on the
+    whole chain, so two parameter-sweep runs must stay distinguishable here even though nothing is deduped
+    away (see [pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters)).
   - `metrics_all` — one row per trial × **GSD algorithm** (not the full pipeline name) combining all three
     functions above: bout-level `tp_wb`/`fp_wb`/`fn_wb`; unmatched totals `reference_num_gs`/
     `detected_num_gs`/`reference_gs_duration_s`/`detected_gs_duration_s`/... (mobgap's own naming); and
@@ -226,9 +233,11 @@ is structural, not a pipeline defect, and comes from two independent causes:
 cause 1 and lifts `tp_wb` for both engines — the residual mismatch is mostly "IMU cleanly captured the
 walking, minus the turn", which is arguably a correct detection of the walking portion. It only helps
 marginally at 0.8. Cause 2 is an SKDH IC-detector sensitivity issue, not fixable by this threshold; it can
-be reduced separately by lowering `GaitLumbar`'s `ic_prom_factor` / `fc_prom_factor` (AP CWT only) in
-[`pipelines/unified_engine.py`](../pipelines/unified_engine.py) — ~0.3 recovers most of the dropped ICs
-without inflating spurious strides, but leaves the strict-0.8 count near unchanged.
+be reduced separately by lowering `GaitLumbar`'s `ic_prom_factor` / `fc_prom_factor` (AP CWT only) via the
+GUI's "⚙ Params" button next to the SKDH ICD Method row — no code edit needed, see
+[pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters) — ~0.3
+recovers most of the dropped ICs without inflating spurious strides, but leaves the strict-0.8 count near
+unchanged.
 
 ## Where this is consumed
 

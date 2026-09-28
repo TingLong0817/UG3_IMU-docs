@@ -61,6 +61,17 @@ start_{ref}, start_imu, end_{ref}, end_imu,
 {param}_{ref}, {param}_imu, {param}_error   ← for every _STRIDE_PARAMS entry
 trial, algorithm
 ```
+
+**All five file types above also carry the 7 tunable-parameter columns** (`skdh_ic_prom_factor`,
+`skdh_fc_prom_factor`, `skdh_height_factor`, `skdh_wavelet_scale`, `skdh_max_stride_time`,
+`skdh_use_cwt_scale_relation`, `mobgap_step_length_scaling_factor`) whenever the pipeline run wrote them —
+see [pipelines — Tunable SKDH/MobGap parameters](../src/ug3imu/pipelines/README.md#tunable-skdhmobgap-parameters).
+Two things this app does with them, both in `_split_algo_cols` (see "Key helper functions" below):
+- `algorithm` gets a `_p[...]` tag suffix whenever any of the 7 differ from default, so two parameter-sweep
+  runs of the same gsd/icd/lrc choice never collide into one indistinguishable row.
+- Every table that shows the resulting Algorithm column also gets an inserted **Params** column right next
+  to it — a human-readable summary like `"ic_prom_factor=0.3"`, or `"default"` — so a row tells you what
+  produced it without cross-referencing anything else.
 **Reference column naming depends on the reference system**:
 - v3d files: `{param}_v3d` (written directly by `stride_evaluation.py`)
 - INDIP files: `{param}_indip` (`indip/__init__.py` renames `_v3d → _indip` inside `batch_stride_analysis_indip`)
@@ -112,11 +123,17 @@ subjects, and adds a `subject` column.
 | Function | Purpose |
 |---|---|
 | `_stride_ref_col(param, df)` | Auto-detects the reference column name in stride data (`_v3d` / `_indip` / `_ref`) |
-| `_stride_summary_with_ref(df)` | Computes bias/SD/MAE/RMSE/LOA/ICC by algorithm, independent of `ref_suffix` |
-| `_wb_summary(df)` | Same as above, for WB data (always uses the `{p}_ref` column) |
+| `_stride_summary_with_ref(df)` | Computes bias/SD/MAE/RMSE/LOA/ICC by algorithm, independent of `ref_suffix`. Groups per-algorithm via an explicit loop (not `.rename()` on a `.groupby().apply()` result) — pandas returns a `DataFrame` instead of a `Series` from `.apply()` when there's exactly one group, which used to crash `.rename(single_string)` on any single-algorithm dataset |
+| `_wb_summary(df)` | Same as above, for WB data (always uses the `{p}_ref` column); same single-group `.apply()` fix |
+| `_present_stage_cols(df)` / `_algo_stage_map(df)` | Which of `gsd_algorithm`/`icd_algorithm`/`lrc_algorithm` are present and meaningful for *df*, and `{algorithm_value: {stage: value}}` built from them — feeds `_split_algo_cols` and `_algo_filter_options` |
+| `_params_summary_col(df)` | Human-readable `"ic_prom_factor=0.3"` (or `"default"`) summary of whichever of the 7 tunable-knob columns are present and non-default on *df* |
+| `_split_algo_cols(df)` | Replaces a flattened `algorithm`/`Algorithm` column with separate per-stage Algorithm columns, and inserts a **Params** column next to them from `_params_summary_col`. The one function every table's "Algorithm" column goes through |
+| `_algo_filter_options(df)` | `{raw algorithm value: human label}` combining `_algo_stage_map` + `_params_summary_col`, e.g. `"GsdIluz / IcdIonescu  [step_length_scaling_factor=1.5]"` |
+| `_algo_param_filter(df, key, label=...)` | `st.multiselect` built on `_algo_filter_options`, narrowing *df* to selected algorithm/parameter combinations before anything below it renders — a no-op when there's ≤1 combination present |
 | `_detect_available_scenarios(out_root, device, subjects)` | Scans `ic_metrics_*.csv` / `wb_error_*.csv` / `gsd_metrics_*.csv` to find available scenarios (Lab has many possible values; At-Home is now always just `outoflab`) |
 | `_detect_available_refs(out_root, device, subjects, scenario)` | Scans `*_{scenario}.csv` and reads the reference-system token from `stem.split("_")[2]` (token-based parsing rather than substring matching, to avoid breaking if the filename structure changes later) |
 | `_ic_stride_glob_patterns(ref_suffix, scenario)` | All five metrics uniformly use `{metric}_{ref}_{scenario}.csv` — At-Home's four metrics (IC/stride/WB/GSD) now all fix `scenario="outoflab"`, so they follow the same formula as Lab with no extra special-casing needed. Both `_eval_data_sig` and `_load_all_data` build their glob lists from this one function |
+| `_load_param_runs(out_root, device, subjects)` | Reads each selected subject's `param_runs.csv` (written by `pipelines.unified_engine.record_param_run` during a pipeline run) for the "Parameter Runs" tab's historical-overview list |
 
 ---
 
@@ -124,15 +141,23 @@ subjects, and adds a `subject` column.
 
 | Tab | Content | Data source |
 |---|---|---|
-| IC Detection | Detection metrics (TP/FP/FN/P/R/F1) + IC timing error (bias/SD/MAE) | `ic_metrics`, `ic_error` |
-| Stride | Stride-level data, structured the same as Walking Bouts: a summary table per stride parameter (Ref mean±SD, IMU mean±SD, Bias[LOA], MAE, ICC) + scatter/BA plots driven by an algorithm/parameter selector (single color: scatter=#4C72B0, BA=#DD8452) + per-condition detail | `stride_error` |
-| Walking Bouts | WB parameter summary table + scatter/BA plots driven by an algorithm/parameter selector. In the Outoflab scenario each row is a **matched WB pair** (not aggregated to one row per trial the way Lab is), so there are more data points | `wb_error` |
-| GSD Detection | Shown when `gsd_metrics` data exists (At-Home scenario): a WB-count/total-walking-time comparison table + sample-level detection metrics (TP/FP/FN/P/R/F1/Specificity/Accuracy/NPV, reusing `_detection_summary`) + bout-level matching metrics (TP/FP/FN/P/R) | `gsd_metrics` |
+| IC Detection | Algorithm/parameter filter, then detection metrics (TP/FP/FN/P/R/F1) + IC timing error (bias/SD/MAE) | `ic_metrics`, `ic_error` |
+| Stride | Algorithm/parameter filter, then stride-level data, structured the same as Walking Bouts: a summary table per stride parameter (Ref mean±SD, IMU mean±SD, Bias[LOA], MAE, ICC) + scatter/BA plots driven by an algorithm/parameter selector (single color: scatter=#4C72B0, BA=#DD8452) + per-condition detail | `stride_error` |
+| Walking Bouts | Algorithm/parameter filter, then WB parameter summary table + scatter/BA plots driven by an algorithm/parameter selector. In the Outoflab scenario each row is a **matched WB pair** (not aggregated to one row per trial the way Lab is), so there are more data points | `wb_error` |
+| GSD Detection | Shown when `gsd_metrics` data exists (At-Home scenario): algorithm/parameter filter, then a WB-count/total-walking-time comparison table + sample-level detection metrics (TP/FP/FN/P/R/F1/Specificity/Accuracy/NPV, reusing `_detection_summary`) + bout-level matching metrics (TP/FP/FN/P/R) | `gsd_metrics` |
+| Parameter Runs | Secondary historical-overview list: one row per distinct parameter combination ever run for the selected subject(s), read straight from `param_runs.csv` — not the primary way to see which parameters produced a given result row (every table above already shows that inline via the Params column), just a place to browse what's been tried | `param_runs.csv` |
 
 **Note**: Gait Measures and Bland-Altman used to be two separate tabs (both built on stride-level data);
 they're now merged into one Stride tab, laid out the same way as Walking Bouts (summary table first,
 then the interactive scatter/BA plots) — this removes the inconsistency of having data at the same
 level split across two tabs while WB-level data got its own single tab.
+
+**Algorithm/parameter filter**: each of the four data tabs opens with an `_algo_param_filter` multiselect
+(default: everything selected) built from `_algo_filter_options`, so a parameter sweep — or a batch run
+across several algorithm choices — can be narrowed down to specific combinations before any table or plot
+below it renders. It's a no-op (hidden effectively, since there's nothing to choose) when the tab's data
+only has one algorithm/parameter combination. This is the actual answer to "how do I compare two parameter
+runs" — filter each tab down to just the two combinations of interest.
 
 ---
 

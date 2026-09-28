@@ -33,7 +33,7 @@ from ug3imu.preprocessing import load_imu_for_mobgap, load_imu_for_skdh
 | Function | Returns | Used by |
 |----------|---------|---------|
 | `load_imu_for_mobgap(path, device)` | `pd.DataFrame` with `[acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z]` (m/s², device-corrected) | [`pipelines/dataset_generation.py`](../pipelines/dataset_generation.py), [`pipelines/athome_dataset_generation.py`](../pipelines/athome_dataset_generation.py) |
-| `load_imu_for_skdh(path, device, sampling_rate_hz)` | `(time, accel)` — `accel` in **g**, no axis correction | [`pipelines/skdh_lab_pipeline.py`](../pipelines/skdh_lab_pipeline.py), [`pipelines/skdh_athome_pipeline.py`](../pipelines/skdh_athome_pipeline.py) |
+| `load_imu_for_skdh(path, device, sampling_rate_hz)` | `(time, accel)` — `accel` in **g**, no axis correction | Not called inside `ug3imu.pipelines` any more — the unified engine loads accel once via `load_imu_for_mobgap`/`dp.data_ss` (m/s²) and converts to g locally (`unified_engine._accel_g`) instead of re-reading the file. Kept exported as a standalone SKDH-facing utility for scripts/notebooks. |
 
 Both dispatch on file extension (`.csv` → `preprocess_imu_for_*`, `.npz` → `preprocess_npz_for_mobgap` /
 `load_npz_for_skdh`). Extending to a new format means adding a branch here — see
@@ -89,5 +89,5 @@ The GUI's **Input Format** dropdown picks up the new option automatically — no
    default sampling rate shown in the GUI).
 3. Add to `DEVICE_HEIGHT_MAP` in [`pipelines/athome_dataset_generation.py`](../pipelines/athome_dataset_generation.py)
    and [`pipelines/dataset_generation.py`](../pipelines/dataset_generation.py) (maps device → metadata CSV
-   column for sensor mounting height).
-4. Add to `_SUPPORTED_DEVICES` in [`pipelines/skdh_athome_pipeline.py`](../pipelines/skdh_athome_pipeline.py).
+   column for sensor mounting height; `dataset_generation.py`'s device-validation check is driven by this
+   map's keys, so this step alone is what makes a new device "known").

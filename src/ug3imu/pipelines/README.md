@@ -8,10 +8,12 @@ gait-analysis engines (MobGap, SKDH).
 [← Back to project README](../../../README.md)
 
 > **Read this first:** [Unified engine](#unified-engine--gsd--gait--turn-algorithms-freely-combinable)
-> below is the current entry point. The three older sections
-> ([Three windowing modes](#three-windowing-modes-one-factory), [SKDH pipelines](#skdh-pipelines),
-> [PRESETS](#presets)) describe the internal MobGap builder and the now-unexported SKDH functions the
-> engine calls under the hood — kept for reference, not the public API.
+> below is the current entry point, and
+> [Tunable SKDH/MobGap parameters](#tunable-skdhmobgap-parameters) covers the numeric knobs on top of it.
+> The three older sections ([Three windowing modes](#three-windowing-modes-one-factory),
+> [SKDH pipelines](#skdh-pipelines), [PRESETS](#presets)) describe the internal MobGap builder and the
+> deleted standalone SKDH functions the engine's logic used to live in — kept for reference, not the
+> public API.
 
 ## Files
 
@@ -23,17 +25,18 @@ gait-analysis engines (MobGap, SKDH).
 | [dataset_generation.py](dataset_generation.py) | `build_dataset_from_file_list()` — the dataset builder used by the GUI (works for lab, at-home, and functional test alike) |
 | [athome_dataset_generation.py](athome_dataset_generation.py) | `INPUT_FORMATS` registry, file discovery (`discover_files_by_keyword`, `discover_athome_files`) |
 | [lab_pipeline.py](lab_pipeline.py) | `DummyGSD` — treats a fixed crop window as a single gait sequence (`windowing="ref"`) |
-| [skdh_lab_pipeline.py](skdh_lab_pipeline.py) | Home of SKDH helpers the engine reuses — `gait_lumbar_df_to_stride_df()`, `_ic_time_to_abs_s()`. `run_skdh_lab_pipeline()` is retained but **no longer exported**. |
-| [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | Home of more SKDH helpers — `_compute_dmo()`, `_skdh_athome_qc_kwargs()`, `_plot_ic_overlay()`. `run_skdh_athome_pipeline()` / `create_skdh_pipeline()` are retained but **no longer exported**. |
+| [skdh_lab_pipeline.py](skdh_lab_pipeline.py) | SKDH output-conversion helpers the engine reuses — `gait_lumbar_df_to_stride_df()`, `_ic_time_to_abs_s()`. The standalone `run_skdh_lab_pipeline()` this module used to hold was dead code (nothing called it once the unified engine shipped) and was deleted. |
+| [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | More SKDH output helpers — `_compute_dmo()`, `_skdh_athome_qc_kwargs()`, `_plot_ic_overlay()`. `run_skdh_athome_pipeline()` / `create_skdh_pipeline()` were the same kind of dead code and were deleted. |
 | [mobilised_wb.py](mobilised_wb.py) | `WBA_RULES`, `trim_edge_strides_and_summarize()` — the shared Mobilise-D-standard WB-assembly rules and first/last-stride trim, applied identically to the MobGap and SKDH gait paths (see [Stride selection & walking-bout assembly](#stride-selection--walking-bout-assembly-mobilised_wbpy) below) |
 | [qc_templates.py](qc_templates.py) | Shared QC text-block builders — the MobGap and SKDH gait paths both render through these so output format is identical |
 
 `ug3imu.pipelines` exports: `build_dataset_from_file_list`, `INPUT_FORMATS`, `discover_files_by_keyword`,
 `discover_athome_files`, `run_unified_pipeline`, `PipelineConfig`, `expand_configs`, `detect_gsd`,
-`PRESETS`, `GSD_ENGINES`, `GAIT_ENGINES`, `stage_algorithm_values`, `resolve_algorithm_name`, plus the
-low-level `create_pipeline` / `run_pipeline_on_dataset` / `FullWindowGSD` / `DummyGSD`. It does **not**
-export `run_skdh_lab_pipeline` / `run_skdh_athome_pipeline` / `create_skdh_pipeline` any more — those
-modules survive only as the home of helpers `unified_engine` reuses.
+`PRESETS`, `GSD_ENGINES`, `GAIT_ENGINES`, `SKDH_METHOD_SUFFIX`, `stage_algorithm_values`,
+`resolve_algorithm_name`, `param_override_tag`, `record_param_run`, plus the low-level `create_pipeline` /
+`run_pipeline_on_dataset` / `FullWindowGSD` / `DummyGSD`. `run_skdh_lab_pipeline` / `run_skdh_athome_pipeline`
+/ `create_skdh_pipeline` are gone entirely (deleted, not just unexported) — `skdh_lab_pipeline.py` /
+`skdh_athome_pipeline.py` now only hold the small output-conversion helpers `unified_engine` reuses.
 
 `build_dataset_from_folder()`, `build_athome_dataset_from_files()`, and `athome_pipeline.py` in its
 entirety were removed as dead code. `legacy_code/athome_monitoring.py` still imports the removed
@@ -94,8 +97,8 @@ mixable because both sides expose them as standalone windows-in / table-out step
    and fragments the bout. MobGap's threshold-free `IcdIonescu` does not have this failure mode, so on
    an *identical* MobGap GSD, SKDH gait tends to match fewer INDIP CWP bouts than MobGap gait. It can be
    reduced by lowering `GaitLumbar`'s `ic_prom_factor` / `fc_prom_factor` (AP CWT only; ~0.3 recovers
-   most dropped ICs without inflating spurious strides) — currently hard-coded at SKDH's `0.6` default in
-   `_run_skdh_gait`. See
+   most dropped ICs without inflating spurious strides) — GUI-tunable per run, not hard-coded, since
+   [Tunable SKDH/MobGap parameters](#tunable-skdhmobgap-parameters) below shipped. See
    [metrics/README.md — Why At-Home matched-WB counts run low](../metrics/README.md#why-at-home-matched-wb-counts-run-low).
 
 Accelerometer data is loaded once (`build_dataset_from_file_list` → `dp.data_ss`, m/s²); the SKDH
@@ -143,14 +146,120 @@ for cfg in expand_configs(windowing="gsd", gsd_engine="mobgap",
 ### Status
 
 `run_unified_pipeline` is now the only pipeline entry point. `scripts/imu_pipeline.py` has a single
-**Pipeline** tab (was MobGap + SKDH tabs) with a per-stage engine × algorithm selector, presets, and
-"All" batch expansion (`expand_configs`). `ug3imu.pipelines` no longer exports
-`run_skdh_lab_pipeline` / `run_skdh_athome_pipeline` / `create_skdh_pipeline`; those modules stay only
-as the home of helpers the engine reuses (`gait_lumbar_df_to_stride_df`, `_ic_time_to_abs_s`,
-`_compute_dmo`, `_skdh_athome_qc_kwargs`, `_plot_ic_overlay`). `create_pipeline` /
+**Pipeline** tab (was MobGap + SKDH tabs) with a per-stage engine × algorithm selector, presets, "All"
+batch expansion (`expand_configs`), and a small "⚙ Params" dialog per gait engine for the tunable knobs
+(see [Tunable SKDH/MobGap parameters](#tunable-skdhmobgap-parameters) below). `run_skdh_lab_pipeline` /
+`run_skdh_athome_pipeline` / `create_skdh_pipeline` have been deleted outright (not just unexported) —
+they were dead code once the unified engine shipped; `skdh_lab_pipeline.py` / `skdh_athome_pipeline.py`
+stay only as the home of the output-conversion helpers the engine reuses (`gait_lumbar_df_to_stride_df`,
+`_ic_time_to_abs_s`, `_compute_dmo`, `_skdh_athome_qc_kwargs`, `_plot_ic_overlay`). `create_pipeline` /
 `run_pipeline_on_dataset` remain exported as the low-level MobGap builder the engine calls internally.
-`legacy_code/athome_monitoring.py` imports the removed `run_skdh_athome_pipeline`; that script is
-archived / not run, so the broken import is expected, not a regression.
+`legacy_code/athome_monitoring.py` imports the long-removed `athome_pipeline.py` / `run_skdh_athome_pipeline`;
+that script is archived / not run, so the broken import is expected, not a regression.
+
+## Tunable SKDH/MobGap parameters
+
+Seven numeric/boolean knobs on `PipelineConfig` (all default `None` = "use the library's own class
+default", except `skdh_height_factor` which is a real float since SKDH itself has no `None` sentinel for
+it):
+
+| Field | Reaches | Only applies when | Class default |
+|-------|---------|--------------------|----------------|
+| `skdh_ic_prom_factor` | `GaitLumbar`'s `ApCwtGaitEvents` substep | `icd_algorithm == "AP CWT"` (silent no-op under `"Vertical CWT"` — `GaitLumbar` never wires it into `VerticalCwtGaitEvents`) | 0.6 |
+| `skdh_fc_prom_factor` | same substep | same as above | 0.6 |
+| `skdh_height_factor` | `GaitLumbar` itself (leg-length ≈ `height_factor * height_m`) | always, when `gait_engine == "skdh"` | 0.53 |
+| `skdh_wavelet_scale` | `GaitLumbar`'s `VerticalCwtGaitEvents` substep | `icd_algorithm == "Vertical CWT"` (silent no-op under `"AP CWT"`) | adaptive (`'default'`, computed per-bout from the bout's own mean step frequency) |
+| `skdh_use_cwt_scale_relation` | same substep | same as above | `True` (adaptive) |
+| `skdh_max_stride_time` | `GaitLumbar`'s `CreateStridesAndQc` substep | **either** `icd_algorithm` — this substep always runs, unlike the two rows above | adaptive (`2.0 * mean_step_time + 1.0`, from the bout's own step-frequency estimate) |
+| `mobgap_step_length_scaling_factor` | MobGap `SlZijlstra` | `gait_engine == "mobgap"` | 1.14675 |
+
+The "only applies when" column matters because `GaitLumbar.__init__` dispatches `ic_prom_factor`/
+`fc_prom_factor` into `ApCwtGaitEvents` and `wavelet_scale`/`use_cwt_scale_relation` into
+`VerticalCwtGaitEvents` inside an `if gait_event_method.lower() == "ap cwt": ... elif ... "vertical cwt":
+...` block — each pair only reaches the branch it's named after, so setting e.g. `skdh_wavelet_scale`
+while `icd_algorithm == "AP CWT"` is accepted but has zero effect (confirmed by reading the installed
+`skdh` package's source, not guessed). `max_stride_time` is different: it's consumed by
+`CreateStridesAndQc`, which both branches run unconditionally after the if/elif, so it's the one knob
+that affects either SKDH IC-detection algorithm.
+
+**Why only two SKDH IC-detection algorithms exist (`stage_registry.GAIT_ENGINES["skdh"]["icd"]`):**
+`GAIT_ENGINES["skdh"]["icd"]` used to list three more entries — `"AP CWT (low-prom)"`, `"Vertical CWT
+(lab-w)"`, `"Vertical CWT (lab-fw)"` — that were never separate algorithms, just fixed presets of the
+same knobs above (e.g. `ic_prom_factor=0.3` for "low-prom"). They were removed because they actively
+conflicted with the tunable-knob feature: picking a preset and then also typing a value into the params
+dialog silently did nothing whenever the typed value happened to equal the *unrelated* class default
+(0.6), since the override logic couldn't distinguish "field left blank" from "explicitly re-entered the
+default". Reproduce any of the old presets by picking the plain algorithm and dialing the same numbers
+into the params dialog — see `stage_registry.SKDH_METHOD_SUFFIX`'s comment for the exact removed values.
+
+**Filename collisions** — `resolve_algorithm_name(config)` only encodes the gsd/icd/lrc algorithm
+*choices*, not these numeric knobs, so two runs with the same choices but different knob values would
+otherwise land on the same output filename and silently overwrite each other. `param_override_tag(config)`
+(`stage_registry.py`) fixes this: it returns `""` when every knob above is at its default (so today's
+default runs are byte-for-byte unaffected — same filenames as before this feature existed) and otherwise
+returns `"_p" + <8 hex chars>` hashed from the overridden values, appended to `algorithm_name` by both the
+GUI (`imu_pipeline.py`'s `_run_unified`/`_run_batch_unified`) and `run_unified_pipeline`'s own fallback.
+
+**Self-describing output** — `stage_algorithm_values(config)` already writes every knob (as a real value,
+or the literal string `"default"` when unset) into every `ic`/`stride`/`wb` CSV row, reusing the exact
+same convention as `gsd_algorithm`/`icd_algorithm`/etc. — no separate lookup needed to know which
+parameters produced a given row. `record_param_run(output_path, config, algorithm_name)` additionally
+upserts one row per distinct `algorithm_name` into `{output_path}/param_runs.csv` (a small per-subject/
+device ledger of every parameter combination tried, for browsing history — not the primary way to answer
+"what produced this row").
+
+**GUI** (`imu_pipeline.py`) — each gait engine's algorithm row has a "⚙ Params" button (not always-visible
+inline entry fields — that clutters the row regardless of which algorithm is selected and invites the
+exact preset/override collision described above) that opens a small popup (`_open_param_settings`) with
+the relevant knobs for that engine. Getters (`_skdh_ic_prom_factor()` etc.) parse the field and return
+`None` on blank/unparseable input, matching `PipelineConfig`'s own "unset" sentinel.
+
+**report_app** (`scripts/report_app.py`) — `_split_algo_cols(df)`, the one function every IC/Stride/WB
+table renders its "Algorithm" column through, also derives a "Params" column from these same raw CSV
+columns (`_params_summary_col`) — e.g. `"ic_prom_factor=0.3"`, or `"default"` when every knob is unset.
+On top of that, every tab (IC/Stride/WB/GSD) opens with an `_algo_param_filter(df, key=...)` multiselect
+(built from `_algo_filter_options`, which combines `_algo_stage_map` + `_params_summary_col` into one
+readable label like `"GsdIluz / IcdIonescu  [step_length_scaling_factor=1.5]"`) — so a parameter sweep can
+be narrowed down to specific combinations *within* whichever tab you're already looking at, not just
+listed passively. This replaced an earlier "Parameter Runs"-tab-only design after feedback that comparing
+parameter results actually requires switching at each results level (IC/Stride/WB/GSD), not a separate
+ledger tab — the "Parameter Runs" tab (reading `param_runs.csv`) is kept as a secondary historical-overview
+list, not the primary way to compare runs.
+
+**Three gaps found and fixed after this shipped** (all surfaced by actually running a parameter sweep
+through evaluation, not just the pipeline step):
+
+1. The MobGap gait path never wrote any of these 7 columns onto its `ic`/`stride`/`wb` output at all —
+   `_run_mobgap_gait` built its own filename tag correctly but never passed the tunable values through
+   to `pipeline_factory.run_pipeline_on_dataset`, which only knew about the older 7-key
+   `_stage_algorithm_columns()`. Fixed by adding a `run_pipeline_on_dataset(..., extra_stage_cols=)`
+   parameter that gets merged into its `stage_cols` dict before every per-row write; `_run_mobgap_gait`
+   now passes the tunable-knob subset of `stage_algorithm_values(config)` there. The SKDH gait path's
+   own IC table had a narrower version of the same gap — it wrote only `gsd_algorithm`/`icd_algorithm`,
+   not the full `stage_vals` dict `stride_df`/`wb_df` already got — fixed the same way.
+2. Every evaluation function that groups/dedups by algorithm identity — `indip.batch_ic_analysis_indip`,
+   `indip.batch_ic_analysis_indip_athome`, `metrics.ic_evaluation.batch_ic_analysis_multi_algo` (IC-level,
+   one file per `(trial, gsd_algorithm, icd_algorithm)` since IC detection doesn't depend on LRC/etc — see
+   [Per-stage algorithm columns](#per-stage-algorithm-columns)) — keyed **only** on that coarse tuple, with
+   no idea these 7 knobs existed. Two parameter-sweep runs sharing the same algorithm *choice* collided on
+   the same key, and `dict.setdefault` silently kept only one, dropping the other's row entirely — the
+   result a run of "evaluate" only ever showing the last parameter combination tried. Fixed by folding a
+   short param-tag (derived from whichever `_PARAM_COLS` are present and non-default, mirroring
+   `param_override_tag`) into the dedup key in all three functions. The stride/WB-level equivalents
+   (`indip._stage_algo_from_df_or_name`, `metrics.wb_evaluation._stage_algo_from_df_or_name`,
+   `metrics.stride_evaluation._stage_algo_from_path`) were never dropping rows (every file there is kept,
+   dedup doesn't apply at that level), but still needed the same param-tag folded into their `"algorithm"`
+   label — otherwise two rows survived but were indistinguishable to a reader or to report_app's grouping.
+   GSD-level dedup (`metrics.gsd_evaluation.batch_gsd_analysis_indip`'s `seen_gsd`, used for `metrics_all`)
+   was **not** touched — none of these 7 knobs affect GSD detection, so collapsing to one row per
+   `gsd_algorithm` there remains correct.
+3. `metrics.gsd_evaluation.batch_gsd_analysis_indip` has its *own*, separate `_names()` helper that labels
+   the per-bout matched-WB output (`error_all`, written to `wb_error_indip_outoflab.csv`) — distinct from
+   the `seen_gsd` dedup in point 2, and initially missed when that fix went in. It read only
+   `gsd_algorithm`/`icd_algorithm`/`lrc_algorithm` off each file's header row, so `wb_error_indip_*.csv`
+   carried no way to tell two parameter-sweep runs' bouts apart even though `error_all` itself was never
+   dropping rows. Fixed the same way as point 2's stride/WB helpers: folds a param tag into `algorithm` and
+   copies the raw `_PARAM_COLS` values onto each row.
 
 ## Three windowing modes, one factory
 
@@ -337,11 +446,12 @@ is `f"SKDH_{gait_event_method}"` (`"SKDH_AP CWT"` / `"SKDH_Vertical CWT"`) and
 
 ## SKDH pipelines
 
-> Internal detail — these functions are **no longer exported** and are not called directly by the GUI.
-> The SKDH gait path now runs through `unified_engine._run_skdh_gait()` (see
+> Internal detail — the standalone functions this section used to describe (`run_skdh_lab_pipeline`,
+> `run_skdh_athome_pipeline`, `create_skdh_pipeline`) have been **deleted** — they were dead code once
+> the unified engine shipped. The SKDH gait path now runs through `unified_engine._run_skdh_gait()` (see
 > [How the two engines are bridged](#how-the-two-engines-are-bridged) above). `skdh_lab_pipeline.py` /
-> `skdh_athome_pipeline.py` survive only as the home of the helpers `unified_engine` reuses:
-> `gait_lumbar_df_to_stride_df`, `_ic_time_to_abs_s`, `_compute_dmo`, `_skdh_athome_qc_kwargs`,
+> `skdh_athome_pipeline.py` survive only as the home of the output-conversion helpers `unified_engine`
+> reuses: `gait_lumbar_df_to_stride_df`, `_ic_time_to_abs_s`, `_compute_dmo`, `_skdh_athome_qc_kwargs`,
 > `_plot_ic_overlay`.
 
 SKDH has no `GenericMobilisedPipeline`-equivalent abstraction. Its `GaitLumbar.predict()` bundles IC

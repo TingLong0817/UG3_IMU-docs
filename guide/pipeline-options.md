@@ -54,6 +54,31 @@ cadence, stride length and walking speed — all together.
 
 You **can** cross engines — e.g. MobGap GSD + SKDH gait. The GSD result feeds whichever gait engine you pick.
 
+### Fine-tuning an algorithm — the "⚙ Params" button
+
+Next to the SKDH method row and the MobGap LRC row is a small **⚙ Params** button. It opens a popup with a
+few numeric knobs for that engine — leave any field blank to use the library's own default.
+
+| Engine | Knobs | Notes |
+|--------|-------|-------|
+| **SKDH** | IC prom. factor, FC prom. factor | Only affect `AP CWT` — no effect when `Vertical CWT` is selected |
+| | Wavelet scale, Use CWT scale relation | Only affect `Vertical CWT` — no effect when `AP CWT` is selected |
+| | Height factor | Always applies (leg length ≈ height × this factor) |
+| | Max stride time | Applies to either SKDH method |
+| **MobGap** | Step length scaling factor | Applies to MobGap's stride-length model |
+
+You don't need to know the exact mechanics — the popup's own hint text next to each field says which
+method it applies to. This replaced an older list of "preset" algorithm choices (e.g. "AP CWT (low-prom)")
+that silently stopped working once you also tried to type a value into the same knob — pick the plain
+method name and dial in the value you want here instead.
+
+Running the same algorithm choice twice with different knob values never overwrites the first run's output
+files — the filename automatically gets a short tag appended whenever a value differs from default, and
+every output row also carries the actual values used as real columns, so nothing needs to be
+cross-referenced by hand. In `report_app.py`, every results table shows a **Params** column right next to
+Algorithm, and each tab has its own algorithm/parameter filter at the top — so comparing "default" against
+a tuned run is a matter of selecting both (or just one) in that filter, in whichever tab you're looking at.
+
 ---
 
 ## Turn

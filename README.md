@@ -33,7 +33,8 @@ below into whichever part you're actually touching.
 - **Batch processing**: select multiple subjects at once; subjects with missing files or empty mocap folders are skipped with a clean warning
 - **Multi-format input**: NPZ (pre-processed) and CSV via an extensible format registry
 - **Two reference systems**: V3D mocap (Vicon Nexus) and INDIP (Mobilise-D in-lab reference)
-- **Two gait-analysis engines**: MobGap (`GenericMobilisedPipeline`) and SKDH (`GaitLumbar`), with matching output formats so results are directly comparable
+- **Two gait-analysis engines, freely mixable per stage**: MobGap (`GenericMobilisedPipeline`) and SKDH (`GaitLumbar`), with matching output formats so results are directly comparable — e.g. MobGap GSD + SKDH gait in one run (see [Unified engine](src/ug3imu/pipelines/README.md#unified-engine--gsd--gait--turn-algorithms-freely-combinable))
+- **Tunable SKDH/MobGap parameters**: prominence/height/wavelet knobs (SKDH `GaitLumbar`) and the stride-length scaling factor (MobGap `SlZijlstra`) are adjustable per run from the GUI's "⚙ Params" dialogs — no code edits, no filename collisions between sweeps, self-describing output columns (see [Tunable SKDH/MobGap parameters](src/ug3imu/pipelines/README.md#tunable-skdhmobgap-parameters))
 - **Mobilise-D-standard stride selection & walking-bout assembly**: duration 0.2–3.0 s + length ≥ 0.15 m, ≥4 strides/bout, ≤3.0 s gap, first/last stride of every WB excluded from parameters — identical across MobGap and SKDH, all three scenarios
 - **QC reports**: written for every run across all pipelines, with library version header
 - **Streamlit report app**: cross-subject dashboard for evaluation results (bias, RMSE, ICC, Bland-Altman)
@@ -105,12 +106,18 @@ Full detail — directory layout, output columns, QC filtering rules — lives i
 
 ## API Usage
 
-### Unified pipeline (programmatic)
+### Unified pipeline (programmatic) — the real entry point
+
+`run_unified_pipeline` is the single entry point both the GUI and every other script use. It dispatches
+to either gait engine internally and lets GSD/Gait/Turn come from different engines in one run (e.g.
+MobGap GSD + SKDH gait) — see [pipelines/README.md](src/ug3imu/pipelines/README.md#unified-engine--gsd--gait--turn-algorithms-freely-combinable)
+for how that wiring works and [Tunable SKDH/MobGap parameters](src/ug3imu/pipelines/README.md#tunable-skdhmobgap-parameters)
+for the numeric knobs (SKDH prominence/height factors, MobGap step-length scaling factor, ...) on top of it.
 
 ```python
 from ug3imu.pipelines import (
     INPUT_FORMATS, discover_files_by_keyword,
-    build_dataset_from_file_list, create_pipeline, run_pipeline_on_dataset,
+    build_dataset_from_file_list, run_unified_pipeline, PipelineConfig, expand_configs,
 )
 
 files = discover_files_by_keyword(
@@ -122,11 +129,22 @@ dataset = build_dataset_from_file_list(
     file_list=files, metadata_csv="participants.csv",
     sampling_rate_hz=100, device="AX6",
 )
-pipeline = create_pipeline(windowing="gsd", gsd_algorithm="GsdIluz",
-                           icd_algorithm="IcdIonescu", enable_dmo=True)
-run_pipeline_on_dataset(dataset, pipeline, output_path="results/TB017/AX6",
-                        algorithm_name="GsdIluz_IcdIonescu", imu_fs=100,
-                        enable_dmo=True, plot_wb=True, plot_ic=True)
+
+cfg = PipelineConfig(
+    windowing="gsd",
+    gsd_engine="mobgap", gsd_algorithm="GsdIluz",
+    gait_engine="skdh",  icd_algorithm="AP CWT",   # mix engines freely per stage
+    turn=True, enable_dmo=True,
+)
+run_unified_pipeline(dataset, cfg, output_path="results/TB017/AX6", imu_fs=100)
+
+# batch: cartesian-expand "All" selections into a list of configs
+for cfg in expand_configs(windowing="gsd", gsd_engine="mobgap",
+                          gsd_algorithms=["GsdIluz", "GsdIonescu"],
+                          gait_engine="mobgap",
+                          icd_algorithms=["IcdIonescu", "IcdShinImproved"],
+                          lrc_algorithms="LrcUllrich", turn=True, enable_dmo=False):
+    run_unified_pipeline(dataset, cfg, output_path="results/TB017/AX6", imu_fs=100)
 ```
 
 ### Preprocessing dispatchers
@@ -139,46 +157,42 @@ df   = load_imu_for_mobgap("recording.npz", device="AX6")   # → DataFrame
 t, a = load_imu_for_skdh("recording.npz",   device="AX6", sampling_rate_hz=100)
 ```
 
-### Lab pipeline
+### Lab pipeline (`windowing="ref"`)
+
+Same `run_unified_pipeline` entry point — only the dataset (adds `mocap_folder`) and `windowing` change;
+everything else (gait engine choice, tunable knobs, evaluation) works identically to the At-Home example
+above.
 
 ```python
-from ug3imu.pipelines import build_dataset_from_file_list, create_pipeline, run_pipeline_on_dataset
+from ug3imu.pipelines import build_dataset_from_file_list, run_unified_pipeline, PipelineConfig
 
 dataset = build_dataset_from_file_list(
     file_list=files, metadata_csv="participants.csv",
     sampling_rate_hz=100, device="AX6",
-    mocap_folder="mocap/TB017/V3D/",
+    mocap_folder="mocap/TB017/V3D/",   # crop window comes from mocap instead of GSD
 )
-pipeline = create_pipeline(windowing="mocap", icd_algorithm="IcdIonescu", enable_dmo=False)
-run_pipeline_on_dataset(dataset, pipeline, output_path="results/",
-                        algorithm_name="mocap_IcdIonescu", imu_fs=100,
-                        plot_ic=True, mocap_folder="mocap/TB017/V3D/")
+cfg = PipelineConfig(windowing="ref", gait_engine="mobgap",
+                     icd_algorithm="IcdIonescu", enable_dmo=False)
+run_unified_pipeline(dataset, cfg, output_path="results/", imu_fs=100,
+                     mocap_folder="mocap/TB017/V3D/", plot_ic=True)
 ```
 
-### SKDH pipelines
+### SKDH gait engine (any windowing mode)
+
+`gait_engine="skdh"` runs `GaitLumbar` instead of MobGap's IC/laterality/stride-length chain — it's an
+engine choice on the *same* `PipelineConfig`/`run_unified_pipeline` call, not a separate function. There
+is no `run_skdh_athome_pipeline` / `run_skdh_lab_pipeline` any more — those were deleted as dead code once
+the unified engine could do everything they did.
 
 ```python
-from ug3imu.pipelines import run_skdh_athome_pipeline, run_skdh_lab_pipeline
+# At-home, GSD-windowed, SKDH gait
+cfg = PipelineConfig(windowing="gsd", gsd_engine="mobgap", gsd_algorithm="GsdIluz",
+                     gait_engine="skdh", icd_algorithm="AP CWT", enable_dmo=True)
+run_unified_pipeline(dataset, cfg, output_path="results/TB017/AX6", imu_fs=100)
 
-# At-home (with GSD and DMO)
-gs, ic, stride, wb, dmo = run_skdh_athome_pipeline(
-    file_list=files, metadata_csv="participants.csv",
-    sampling_rate_hz=100, device="AX6", output_path="results/",
-)
-
-# Functional test (full recording, no GSD, no DMO)
-gs, ic, stride, wb, dmo = run_skdh_athome_pipeline(
-    file_list=files, metadata_csv="participants.csv",
-    sampling_rate_hz=100, device="AX6", output_path="results/",
-    use_gsd=False, enable_dmo=False,
-)
-
-# Lab
-all_ic, all_stride = run_skdh_lab_pipeline(
-    imu_folder="imu/TB017/AX6_Sync/", txt_folder="mocap/TB017/V3D/",
-    metadata_csv="participants.csv", sampling_rate_hz=100,
-    device="AX6", output_path="results/",
-)
+# Functional test — entire recording is one window, no GSD, no DMO
+cfg = PipelineConfig(windowing="full", gait_engine="skdh", icd_algorithm="AP CWT", enable_dmo=False)
+run_unified_pipeline(dataset, cfg, output_path="results/TB017/AX6", imu_fs=100)
 ```
 
 ### Evaluation

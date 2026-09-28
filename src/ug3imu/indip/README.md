@@ -145,9 +145,13 @@ V3D path is where the reference DataFrame comes from and that error columns are 
 for output clarity.
 
 `batch_ic_analysis_indip` dedups `ic.csv` files the same way as its V3D counterpart (one file per
-`(trial, gsd_algorithm, icd_algorithm)`, since IC detection doesn't depend on LRC/etc) — see
-[pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns) and
-[metrics — IC evaluation](../metrics/README.md#ic-evaluation-ic_evaluationpy).
+`(trial, gsd_algorithm, icd_algorithm, param_tag)`, since IC detection doesn't depend on LRC/etc) — see
+[pipelines — per-stage algorithm columns](../pipelines/README.md#per-stage-algorithm-columns),
+[pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters) and
+[metrics — IC evaluation](../metrics/README.md#ic-evaluation-ic_evaluationpy). The `param_tag` component
+was added after a real bug: without it, two parameter-sweep runs sharing the same
+`(gsd_algorithm, icd_algorithm)` collided on the same dedup key and one silently disappeared from the
+output — `batch_ic_analysis_indip_athome` had, and got, the identical fix.
 
 ### At-Home stride/IC evaluation (incl. single/double support)
 
