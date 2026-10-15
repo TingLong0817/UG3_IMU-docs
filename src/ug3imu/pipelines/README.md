@@ -393,6 +393,7 @@ Every dataset builder in this module expects a metadata CSV (default `UG3Dev-Par
 | `AX6 height (meters)` | Sensor mounting height for AX6 |
 | `Dynaport height (meters)` | Sensor mounting height for DP7 |
 | `APDM3 lumbar sensor height (meters)` | Sensor mounting height for OPAL |
+| `Embrace plus` | Sensor mounting height for EMPATICA_lumbar |
 
 If a device-specific column is missing or `NaN` for a subject, the builder falls back to `height × 0.55`
 and logs a warning rather than failing the whole batch.

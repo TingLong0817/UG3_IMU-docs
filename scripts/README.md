@@ -40,7 +40,7 @@ file itself.
 | **Metadata** | Participant CSV — see [pipelines/README.md — Metadata CSV format](../src/ug3imu/pipelines/README.md#metadata-csv-format) |
 | **Subject ID** | Subject folder name (e.g. `TB017`); auto-uppercased |
 | **Batch…** | Checklist to select multiple subjects; disables the single Subject ID entry while active |
-| **Device** | `AX6` / `OPAL` / `DP7` — sets sampling rate automatically (`DEVICE_FS` in this file) |
+| **Device** | `AX6` / `OPAL` / `DP7` / `EMPATICA` (lumbar placement; internal device key `EMPATICA_lumbar`, output folder `EMPATICA`) — sets sampling rate automatically (`DEVICE_FS` in this file) |
 | **Input Format** | `NPZ` / `CSV` — from `INPUT_FORMATS` (see [preprocessing/README.md](../src/ug3imu/preprocessing/README.md#input-formats)) |
 | **Task** | Keyword preset for file discovery, editable via **Settings…** → writes `task_config.json` |
 

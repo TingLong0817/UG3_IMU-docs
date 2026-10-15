@@ -3,6 +3,45 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-10-15 — EMPATICA (Embrace Plus) support; several MobGap/report_app fixes surfaced by real data
+
+A fourth device, **EMPATICA** (Embrace Plus, lumbar placement), is now supported end-to-end: raw-file
+discovery, MobGap/SKDH preprocessing, GUI device selector, and `report_app.py`'s device dropdown. See
+[preprocessing/README.md — Supported devices](src/ug3imu/preprocessing/README.md#supported-devices) for
+the axis-rotation derivation (180° rotation around Y, same pattern as OPAL — derived from the device's
+documented raw mounting orientation against the Mobilise-D sensor frame, and cross-checked against AX6's
+raw gravity reading at rest). The internal device key is `EMPATICA_lumbar` (not bare `EMPATICA`) so file
+discovery can tell the lumbar placement apart from the same subject's `EMPATICA_ankleL/ankleR/wrist/BVP`
+folders, but results still land under a plain `EMPATICA` output folder — `imu_pipeline._output_device_name`
+maps between the two.
+
+Also fixed, all found while bringing up OPAL and EMPATICA data through paths that AX6/DP7 had exercised for
+months without hitting them:
+
+- **MobGap gait crashed on any non-integer sampling rate** (`ValueError: A value (...) in x_new is below
+  the interpolation range's minimum`) — `SlZijlstra`'s internal per-second resampling assumes an integer
+  Hz; AX6's real rate (99.51 Hz) left a sub-sample bin-edge offset that could land exactly on a stride
+  boundary. Fixed by rounding only the sampling rate mobgap itself reads
+  (`pipeline_factory._round_fs_for_mobgap`); crop frames, evaluation, and output timestamps elsewhere still
+  use the device's true rate.
+- **`discover_files_by_keyword`'s device match was a loose substring** — `device="OPAL"` matched
+  `Opal_Sync_L`/`Opal_Sync_R` (secondary foot-placement folders) as well as the real `Opal_Sync`. Now
+  requires an exact match on `{device}` or `{device}_Sync`.
+- **OPAL's ICD algorithms collapsed together in evaluation** — `imu_pipeline._detect_ic_algorithms` and
+  `ic_evaluation.py`'s empty-file fallback both assumed a fixed 7-token filename prefix before the
+  algorithm name; OPAL's raw filename has no separate `_sync` token (just `opal8`), so the split landed one
+  token early and merged 3 distinct MobGap ICD algorithms into one (`IcdIonescu`/`IcdShinImproved`/
+  `IcdHKLeeImproved` all read back as `LrcUllrich`). Both now locate the `mocap`/`indip` reftype token
+  itself instead of assuming a fixed count.
+- **SKDH's IC overlay plot never drew the reference ICs**, only the algorithm's own detections — the
+  `mocap_folder`/`indip_map` parameters were already threaded into `_run_skdh_gait` but unused. It now
+  builds the same V3D/INDIP lookup as the MobGap path and calls the same `plot_ic_overlay_lab`, so both
+  engines' IC plots look the same.
+
+New **Stride Length QC** sidebar filter in `report_app.py`, mirroring the existing Cadence QC: drops
+stride/WB rows whose stride length (reference or IMU) falls outside a configurable range (default
+0.15–2.5 m) before computing bias/RMSE/ICC.
+
 ## 2026-09-28 — SKDH/MobGap parameters are tunable from the GUI, and correctly tracked through evaluation
 
 Seven previously-hardcoded knobs (SKDH `GaitLumbar`'s prominence/wavelet/height/max-stride-time knobs;

@@ -50,7 +50,7 @@ bypassing the format registry (e.g. writing a one-off script against a known fil
 | Format | Extension | Raw accel unit | NPZ/CSV keys or columns |
 |--------|-----------|-----------------|--------------------------|
 | NPZ | `.npz` | g | `accel (N×3)`, `gyro (N×3, deg/s)`, `fs`, `time` |
-| CSV | `.csv` | g (AX6/DP7) or m/s² (OPAL) | `Acc_X/Y/Z`, `Gyro_X/Y/Z` |
+| CSV | `.csv` | g (AX6/DP7/EMPATICA) or m/s² (OPAL) | `Acc_X/Y/Z`, `Gyro_X/Y/Z` |
 
 The NPZ time vector is read from the `time` key (Unix timestamps, shifted to start at 0); if absent it
 falls back to `fs`, then to the caller-supplied `sampling_rate_hz`.
@@ -66,9 +66,17 @@ The registry mapping display name → extension (`INPUT_FORMATS`) actually lives
 | `AX6` | Axivity AX6 | g → m/s², 180° rotation around X (flip Y, Z) | flip Y, Z | g, no rotation |
 | `OPAL` | APDM Opal v3 | 180° rotation around Y (flip X, Z) | flip X, Z; rad/s → deg/s | m/s² → g |
 | `DP7` | Dynaport Hybrid | g → m/s² | — (no gyro) | g, no rotation |
+| `EMPATICA_lumbar` | Empatica Embrace Plus (lumbar placement) | g → m/s², 180° rotation around Y (flip X, Z) | flip X, Z | g, no rotation |
 
 All MobGap outputs use column order `[acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z]`. For SKDH, OPAL is the
-only device needing a unit conversion (m/s² → g); AX6/DP7 NPZ and CSV are already in g.
+only device needing a unit conversion (m/s² → g); AX6/DP7/EMPATICA NPZ and CSV are already in g.
+
+`EMPATICA_lumbar`'s rotation was derived from its documented raw mounting orientation (Forward = -Z,
+Up = -X, Right = +Y) against the Mobilise-D sensor frame (+acc_x = up, +acc_y = right, +acc_z = forward),
+and cross-checked against AX6's raw gravity reading at rest (same target convention, independently
+verified). The device key is `EMPATICA_lumbar`, not bare `EMPATICA` — the same subject folder also has
+`EMPATICA_ankleL/ankleR/wrist/BVP_Sync` placements, and `discover_files_by_keyword`'s exact folder-name
+match (device or `{device}_Sync`) needs the full `EMPATICA_lumbar_Sync` name to avoid picking those up too.
 
 ## Adding a new input format
 
