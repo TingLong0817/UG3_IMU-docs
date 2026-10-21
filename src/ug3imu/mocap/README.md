@@ -44,12 +44,22 @@ Three time axes need to be reconciled:
 | V3D mocap | Relative to *Cropped Measurement Start* | Seconds from crop start |
 | SKDH `GaitLumbar` | Inherits from the `time` array passed in | Seconds |
 
-`parse_mocap_frame_window` reads `Cropped Measurement Start/End Frame`, converts to IMU frame indices via
-`ratio = imu_fs / mocap_fs`, and pads ±1 s on each side as a processing buffer:
+`parse_mocap_frame_window`'s window is the mocap reference's own **[first IC, last IC] span** (RHS/LHS
+heel strikes) — **not** the file's nominal `Cropped Measurement Start/End Frame`. That nominal crop can
+extend past stretches where mocap tracking quality was poor and no RHS/LHS were logged there, and cropping
+the IMU signal to that wider window would let a downstream detection algorithm "find" gait in a dead zone
+with no mocap ground truth to match against. (`Cropped Measurement Start Frame`, when present, is still
+used — but only as the seconds→absolute-frame offset needed to convert RHS/LHS, which are seconds-within-
+crop, into absolute frames.) This mirrors INDIP's own windowing
+([`ug3imu.indip.get_indip_windows`](../indip/README.md) uses CWP Start/End, which are likewise the
+first/last IC) — both reference systems define their processing window the same way.
+
+The IC span is then converted to IMU frame indices via `ratio = imu_fs / mocap_fs`, padded by `imu_fs`
+samples (~1 s) on each side as a processing buffer:
 
 ```python
-start_frame_imu = round(start_frame * ratio) - imu_fs
-end_frame_imu   = round(end_frame   * ratio) + imu_fs
+start_frame_imu = round(first_ic_frame * ratio) - imu_fs
+end_frame_imu   = round(last_ic_frame  * ratio) + imu_fs
 ```
 
 MobGap consumes these as `DummyGSD` window boundaries (see [`pipelines/lab_pipeline.py`](../pipelines/lab_pipeline.py));
@@ -60,8 +70,10 @@ time_crop = np.arange(start_frame, end_frame) / sampling_rate_hz  # absolute sec
 ```
 
 Both outputs land in the same reference frame as `mocap_txt_to_ic_df`'s output, so downstream evaluation
-code ([`ug3imu.metrics`](../metrics/README.md)) can compare IMU and mocap events directly. The ±1 s buffer
-is trimmed back out during evaluation so edge detections near the crop boundary aren't counted as false
+code ([`ug3imu.metrics`](../metrics/README.md)) can compare IMU and mocap events directly. Evaluation uses
+its *own*, independent, smaller buffer around that same first/last-IC span (`process_ic_trial`'s
+`buffer_s`, default **0.2 s**, not the ~1 s pipeline-window padding above) when trimming detected events to
+the scoring window, so edge detections right at the IC-span boundary aren't counted as false
 positives/negatives.
 
 ## Public API

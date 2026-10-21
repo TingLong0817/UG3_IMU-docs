@@ -73,8 +73,10 @@ fraction of *both* bouts' durations. Lowering it to ~0.6–0.7 is the intended w
 matched At-Home WBs — At-Home match rates are structurally low at 0.8 because INDIP's CWP bundles turns
 into one bout while the pipeline's WB assembly splits at them. Full rationale in
 [metrics/README.md — Why At-Home matched-WB counts run low](../src/ug3imu/metrics/README.md#why-at-home-matched-wb-counts-run-low).
-The field only affects INDIP At-Home GSD/WB evaluation — not pipeline runs, not Lab/mocap evaluation, not
-stride evaluation — and is remembered in `project_settings.json`.
+The field affects every **stride**-level match (Lab mocap, Lab INDIP, and At-Home INDIP — passed as
+`min_overlap_ratio`) plus **At-Home INDIP GSD/WB** matching (passed as `overlap_threshold`). It does *not*
+affect Lab WB matching (`batch_wb_analysis_v3d`/`batch_wb_analysis_indip` take no such parameter). It never
+affects pipeline runs themselves, only evaluation. The value is remembered in `project_settings.json`.
 
 ### `task_config.json`
 

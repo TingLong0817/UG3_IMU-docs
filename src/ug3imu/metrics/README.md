@@ -37,8 +37,10 @@ via `include_tags=self._current_keywords`.
 from ug3imu.metrics import batch_ic_analysis_multi_algo, process_ic_trial, extract_trial_key
 ```
 
-- `process_ic_trial(imu_path, txt_path, imu_fs, mocap_fs=255, buffer_s=1.0, tolerance_samples=None)` —
-  reads one IMU IC CSV + one V3D TXT, strips the ±1 s processing buffer (see
+- `process_ic_trial(imu_path, txt_path, imu_fs, mocap_fs=255, buffer_s=0.2, tolerance_samples=None)` —
+  reads one IMU IC CSV + one V3D TXT, trims detected ICs to the mocap reference's own [first IC, last IC]
+  span with `buffer_s` slack on each side (its own, smaller buffer — independent of the ~1 s window padding
+  `parse_mocap_frame_window` applies at pipeline-run time, see
   [`ug3imu.mocap`](../mocap/README.md#time-alignment--the-core-problem-this-module-solves)), matches ICs
   within `tolerance_samples` (default `0.2 × imu_fs`), returns `(error_df, performance_metrics)`.
   `error_df` has `detected`, `reference`, `error_samples`, `error_s` columns; `performance_metrics` is
@@ -62,7 +64,7 @@ from ug3imu.metrics import batch_ic_analysis_multi_algo, process_ic_trial, extra
 from ug3imu.metrics import match_strides, process_stride_trial, batch_stride_analysis
 ```
 
-- `match_strides(v3d_df, imu_df, tolerance_samples=20, min_overlap_ratio=0.0)` — the core matcher. Stride
+- `match_strides(v3d_df, imu_df, tolerance_samples=20, min_overlap_ratio=0.0, buffer_frames=0)` — the core matcher. Stride
   start == IC position, so this reuses `categorize_ic_list` on the `start` column directly. For each
   matched pair it emits `{param}_v3d`, `{param}_imu`, `{param}_error` for all 12 params in `_STRIDE_PARAMS`
   (`stride_duration_s, cadence_spm, stride_length_m, walking_speed_mps, stance_time_s, swing_time_s,
@@ -83,15 +85,21 @@ from ug3imu.metrics import match_strides, process_stride_trial, batch_stride_ana
   `performance_metrics["n_iou_removed"]`. The GUI's **Evaluate Results** button uses `min_overlap_ratio=0.8`
   and writes `n_iou_removed` into the trial's `qc/qc_summary_*.txt` block (see
   [`pipelines/qc_templates.py`](../pipelines/qc_templates.py)).
+- **`buffer_frames`** (default `0`, disabled): if set, drops IMU strides whose start falls outside
+  `[v3d start.min() - buffer_frames, v3d start.max() + buffer_frames]` before matching — same rationale as
+  `ic_evaluation.py`'s `buffer_s` (the reference's own [first, last] stride span is the only region mocap
+  actually has ground truth for).
 - `process_stride_trial(...)` / `batch_stride_analysis(...)` — single-trial / folder-batch wrappers around
-  `match_strides`, same batching convention as the IC module. `batch_stride_analysis` additionally computes
-  per-trial RMSE per parameter in the returned `summary_all`.
+  `match_strides` (both also take `buffer_s=0.2`, converted to frames internally), same batching convention
+  as the IC module. `batch_stride_analysis` additionally computes per-trial RMSE per parameter in the
+  returned `summary_all`.
 - `normalize_athome_stride(stride_df, imu_fs)` — converts an At-Home `*_stride.csv` to the common
-  `start`/`end` (IMU frame) schema `match_strides` expects. MobGap's At-Home output already has these
-  columns and passes through unchanged; SKDH's At-Home output keeps the raw GaitLumbar shape (`IC Time`,
-  `stride time`, `Bout N`, ...) and is converted via
-  [`pipelines.skdh_lab_pipeline.gait_lumbar_df_to_stride_df`](../pipelines/skdh_lab_pipeline.py) — the same
-  conversion Lab SKDH uses before writing its own stride CSV. Used by
+  `start`/`end` (IMU frame) schema `match_strides` expects. Since the stride-selection/WB-assembly
+  unification, `unified_engine._run_skdh_gait` runs SKDH At-Home strides through the same
+  `gait_lumbar_df_to_stride_df` → `StrideSelection` → `WbAssembly` → trim tail as Lab *before writing*, so
+  current SKDH At-Home `*_stride.csv` files already carry the unified `start`/`end`/... schema identical to
+  MobGap's, and this function is a pass-through for both. Its `IC Time`-based raw-GaitLumbar-shape
+  conversion branch only still fires for older files written before that unification. Used by
   [`indip.batch_stride_analysis_indip_athome`](../indip/__init__.py) — see
   ["At-Home stride/IC evaluation"](../indip/README.md#at-home-strideic-evaluation-incl-singledouble-support)
   in the indip README.
@@ -147,9 +155,11 @@ At-Home has no per-task trial structure — one subject's recording yields dozen
 both the algorithm and INDIP's own CWP list, so `wb_evaluation.py`'s trial-aggregate approach doesn't
 apply. Instead:
 
-- `normalize_athome_wb(wb_df, imu_fs)` — converts either pipeline's `*_wb.csv` (MobGap: `start`/`end` in
-  samples; SKDH: `Bout Starts`/`Bout Duration` in seconds — both share the same t=0 = recording start
-  reference as INDIP) into a common `start_s`/`end_s`/`duration_s`/... schema.
+- `normalize_athome_wb(wb_df, imu_fs)` — converts either pipeline's `*_wb.csv` into a common
+  `start_s`/`end_s`/`duration_s`/... schema. Current SKDH At-Home `*_wb.csv` files already use the same
+  unified `start`/`end`/`duration_s` schema as MobGap (see `normalize_athome_stride` above — same shared
+  conversion tail), so this is now a pass-through for both pipelines; its `Bout Starts`/`Bout Duration`
+  (raw SKDH seconds) branch only still fires for older files written before the unification.
 - Matching/aggregation is done with **mobgap's own** `mobgap.gait_sequences.evaluation` functions directly
   (not hand-rolled overlap or sum calculations), at three levels:
   - `_match_wb_bouts` (via mobgap's `categorize_intervals` + `get_matching_intervals`) — bout-to-bout

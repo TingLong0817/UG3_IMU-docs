@@ -99,11 +99,20 @@ column next to it.
 
 ### Sidebar selection order
 1. Results root path
-2. Device (OPAL/AX6/DP7)
+2. Device (OPAL/AX6/DP7/EMPATICA)
 3. Subject multi-select
 4. **Scenario** (LAB / Outoflab) ← detected first, then selected
 5. **Reference** (v3d / indip) ← detected based on the chosen scenario
-6. Export PDF button
+6. **Cadence QC** — checkbox (default on) + range slider (default 80–180 spm). Drops stride/WB rows
+   whose cadence (reference or IMU side) falls outside the range before any bias/RMSE/ICC is computed.
+7. **Stride Length QC** — checkbox (default on) + range slider (default 0.15–2.5 m). Same mechanism as
+   Cadence QC, applied to stride length instead.
+8. Export PDF button
+
+Both QC filters exist because the pipeline's own stride selection only enforces a duration/length floor
+(no cadence rule, no upper length bound, per the Mobilise-D standard) and the reference systems
+(mocap/INDIP) have no upstream QC of their own — so an implausible value on either side can otherwise
+reach the summary metrics.
 
 ### Data loading
 

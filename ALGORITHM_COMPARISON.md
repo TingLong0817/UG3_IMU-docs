@@ -188,6 +188,14 @@ Compare GSD methods                     Run all 5 GSD algorithms;
 
 ## Technical Challenges
 
+> **Scope note:** the challenges below describe what it would take to integrate SKDH and mobgap at the
+> *per-algorithm* level (e.g. a tpcp-wrapped SKDH detector dropped into a mobgap pipeline slot). This
+> toolbox does not attempt that — it sidesteps most of these problems via **engine-level** swapping
+> instead: a shared GSD window list is replayed wholesale into either mobgap's `GenericMobilisedPipeline`
+> or SKDH's `GaitLumbar`, with a shared post-processing tail unifying their output schemas (see
+> [pipelines — Unified engine](src/ug3imu/pipelines/README.md#unified-engine--gsd--gait--turn-algorithms-freely-combinable)).
+> The per-algorithm integration described here remains real and unsolved, just out of this project's scope.
+
 ### 1. Incompatible Framework Architectures
 
 mobgap is built on **tpcp**: algorithms are typed objects injected into pipeline slots via constructor, results stored as instance attributes with trailing `_` (`ic_list_`, `gs_list_`), and every algorithm must subclass a domain-specific base class (`BaseGsDetector`, `BaseIcDetector`, etc.).

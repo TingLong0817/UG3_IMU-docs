@@ -105,7 +105,8 @@ Turn on **Compare against reference** to score the results against a ground-trut
 
 ### The "WB overlap" number
 
-Range 0.5–1.0, default **0.8**. A detected walking bout is counted as matching a reference bout only if
+Range 0.51–1.0 (mobgap requires strictly greater than 0.5), default **0.8**. A detected walking bout is
+counted as matching a reference bout only if
 they overlap by at least this fraction **of both** the detected bout's length and the reference bout's
 length.
 
@@ -121,8 +122,9 @@ with, and fails the strict 0.8 test.
 
 **What to do:** lower it to **0.6–0.7** if you need a usable number of matched bouts to analyse. The
 matches you gain are mostly cases where the pipeline captured the walking cleanly but excluded the turn —
-a reasonable match to keep. The value is remembered between sessions and only affects INDIP At-Home
-WB evaluation.
+a reasonable match to keep. The value is remembered between sessions, and affects every stride-level
+match (Lab mocap, Lab INDIP, At-Home INDIP) plus At-Home INDIP GSD/WB matching — it does not affect Lab
+WB matching or the pipeline run itself.
 
 ---
 

@@ -150,6 +150,23 @@ depend on LRC/etc — see [pipelines — per-stage algorithm columns](../pipelin
 [pipelines — Tunable SKDH/MobGap parameters](../pipelines/README.md#tunable-skdhmobgap-parameters) and
 [metrics — IC evaluation](../metrics/README.md#ic-evaluation-ic_evaluationpy).
 
+### INDIP-vs-mocap validation (validating INDIP itself, not an IMU algorithm)
+
+A separate set of functions evaluates **INDIP against V3D mocap directly** — i.e. treats INDIP's own
+detections as the "algorithm" and V3D as ground truth, instead of evaluating an IMU algorithm's output.
+This answers "how accurate is the INDIP reference system itself?" rather than "how accurate is our IMU
+pipeline?".
+
+| Function | Mirrors | Notes |
+|----------|---------|-------|
+| `batch_ic_analysis_indip_vs_mocap(mat_path, txt_folder, fs=100.0, mocap_fs=255, ...)` | `metrics.ic_evaluation.process_ic_trial` | INDIP's `InitialContactEvent` list stands in for an IMU algorithm's IC csv; trimmed to the V3D reference's own [first IC, last IC] span (± `buffer_s`, default 0.2) before matching |
+| `batch_stride_analysis_indip_vs_mocap(mat_path, txt_folder, fs=100.0, mocap_fs=255, min_overlap_ratio=0.8, ...)` | `metrics.stride_evaluation.batch_stride_analysis` | INDIP's own CWP strides stand in for an IMU stride csv; `step_time_s`/`step_length_m` are V3D-only so NaN on the INDIP side; support-phase columns use the same raw-event computation as elsewhere in this module, not INDIP's pre-aggregated fields |
+| `batch_wb_analysis_indip_vs_mocap(mat_path, txt_folder, mocap_fs=255)` | `metrics.wb_evaluation.batch_wb_analysis_v3d` | INDIP's CWP entries aggregated per trial (stride-count-weighted) stand in for an IMU wb csv; uses CWP, not MicroWB |
+
+Consumed by [`scripts/evaluate_indip_vs_mocap.py`](../../../scripts/evaluate_indip_vs_mocap.py) (batch runner)
+and [`scripts/report_app_indipvsmocap.py`](../../../scripts/report_app_indipvsmocap.py) (dedicated results
+viewer — see [REPORT_APP_DOC.md](../../../scripts/REPORT_APP_DOC.md) for its sidebar/tab structure).
+
 ### At-Home stride/IC evaluation (incl. single/double support)
 
 At-Home's `*Outoflab.mat` `ContinuousWalkingPeriod` is an array of per-bout structs (one per detected
@@ -166,12 +183,12 @@ each bout's scalar aggregates and discards these per-stride arrays — the funct
 | `batch_stride_analysis_indip_athome(stride_folder, mat_path, imu_fs, ...)` | `batch_stride_analysis_indip` | `load_indip_stride_athome` — **no task-name keying**: every `*_stride.csv` matches against the same continuous reference (mirrors `batch_gsd_analysis_indip`'s at-home matching pattern, not the Lab per-task one) |
 | `batch_ic_analysis_indip_athome(ic_folder, mat_path, imu_fs, ...)` | `batch_ic_analysis_indip` | `load_indip_ic_athome` — same no-keying pattern; no `buffer_s` edge trim (that trim strips the padded-window margin around each Lab per-task crop window, which At-Home doesn't have) |
 
-SKDH's At-Home `*_stride.csv` keeps the raw GaitLumbar shape (`IC Time`, `stride time`, `Bout N`, ...) with
-no `start`/`end` columns yet, unlike the Lab SKDH pipeline which converts before writing. `batch_stride_analysis_indip_athome`
-runs every stride file through [`metrics.stride_evaluation.normalize_athome_stride`](../metrics/stride_evaluation.py)
-first, which passes MobGap files through unchanged and converts SKDH files via
-[`pipelines.skdh_lab_pipeline.gait_lumbar_df_to_stride_df`](../pipelines/skdh_lab_pipeline.py) (the same
-conversion the Lab SKDH pipeline uses, factored out for reuse).
+Since the stride-selection/WB-assembly unification, SKDH's At-Home `*_stride.csv` already carries the same
+`start`/`end`/... schema as MobGap's (`unified_engine._run_skdh_gait` runs the shared conversion tail
+before writing, for both Lab and At-Home). `batch_stride_analysis_indip_athome` still runs every stride
+file through [`metrics.stride_evaluation.normalize_athome_stride`](../metrics/stride_evaluation.py) first,
+but that's now a pass-through for both pipelines — its raw-GaitLumbar-shape (`IC Time`, ...) conversion
+branch only still fires for older files written before the unification.
 
 ## Where this is consumed
 
