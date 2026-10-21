@@ -14,7 +14,7 @@ all three scenarios (Lab, At-Home, Functional Test) and both engines (MobGap, SK
 | [unified_engine.py](unified_engine.py) | **Public entry point** — `run_unified_pipeline()`, `detect_gsd()`, `expand_configs()`, `record_param_run()` |
 | [pipeline_factory.py](pipeline_factory.py) | Low-level MobGap builder the engine calls — `create_pipeline()`, `run_pipeline_on_dataset()`, `GSD_ALGO_MAP` / `ICD_ALGO_MAP` / `LRC_ALGO_MAP`, `FullWindowGSD` |
 | [dataset_generation.py](dataset_generation.py) | `build_dataset_from_file_list()` — dataset builder used by the GUI (lab, at-home, and functional test alike) |
-| [athome_dataset_generation.py](athome_dataset_generation.py) | `INPUT_FORMATS` registry, file discovery (`discover_files_by_keyword`, `discover_athome_files`) |
+| [athome_dataset_generation.py](athome_dataset_generation.py) | `INPUT_FORMATS` registry, file discovery (`discover_files_by_keyword`) |
 | [lab_pipeline.py](lab_pipeline.py) | `DummyGSD` — treats a fixed crop window as one gait sequence (`windowing="ref"`) |
 | [skdh_lab_pipeline.py](skdh_lab_pipeline.py) | SKDH output-conversion helpers reused by the engine — `gait_lumbar_df_to_stride_df()`, `_ic_time_to_abs_s()` |
 | [skdh_athome_pipeline.py](skdh_athome_pipeline.py) | More SKDH helpers — `_compute_dmo()`, `_skdh_athome_qc_kwargs()`, `_plot_ic_overlay()` |
@@ -22,7 +22,7 @@ all three scenarios (Lab, At-Home, Functional Test) and both engines (MobGap, SK
 | [qc_templates.py](qc_templates.py) | Shared QC text-block builders, so MobGap and SKDH output format is identical |
 
 Exports: `build_dataset_from_file_list`, `INPUT_FORMATS`, `discover_files_by_keyword`,
-`discover_athome_files`, `run_unified_pipeline`, `PipelineConfig`, `expand_configs`, `detect_gsd`,
+`run_unified_pipeline`, `PipelineConfig`, `expand_configs`, `detect_gsd`,
 `PRESETS`, `GSD_ENGINES`, `GAIT_ENGINES`, `SKDH_METHOD_SUFFIX`, `stage_algorithm_values`,
 `resolve_algorithm_name`, `param_override_tag`, `record_param_run`, plus the low-level `create_pipeline` /
 `run_pipeline_on_dataset` / `FullWindowGSD` / `DummyGSD`.
@@ -284,7 +284,7 @@ the MobGap format so both engines' CSVs are directly comparable (see
 ## File discovery (`athome_dataset_generation.py`)
 
 ```python
-from ug3imu.pipelines import INPUT_FORMATS, discover_files_by_keyword, discover_athome_files
+from ug3imu.pipelines import INPUT_FORMATS, discover_files_by_keyword
 ```
 
 - **`INPUT_FORMATS`** — `{"NPZ": ".npz", "CSV": ".csv"}` registry; the GUI's **Input Format** dropdown reads
@@ -299,9 +299,6 @@ from ug3imu.pipelines import INPUT_FORMATS, discover_files_by_keyword, discover_
   `rightlowerleg`, `leftlowerleg`) after the device token, using an explicit whitelist (`_PLACEMENT_LABELS`)
   rather than inferring from token position, since scenario/task tags (`home`, `gait1`, …) can also appear
   as bare tokens there.
-- **`discover_athome_files(project_root, subject, device)`** — older, structure-specific discovery
-  (`{root}/{subject}/{date}/{device}/At Home/*.csv`, requires `"athome"` in the filename). Superseded by
-  `discover_files_by_keyword` for GUI use, kept for scripts relying on the strict at-home layout.
 
 ## QC reports (`qc_templates.py`)
 
