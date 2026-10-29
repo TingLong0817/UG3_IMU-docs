@@ -28,6 +28,7 @@ whether the input file is CSV or NPZ, or whether it's headed to MobGap or SKDH.
 
 ```python
 from ug3imu.preprocessing import load_imu_for_mobgap, load_imu_for_skdh
+from ug3imu.preprocessing import read_cwa_fs  # .cwa callers: get the file's actual device fs
 ```
 
 | Function | Returns | Used by |
@@ -36,14 +37,16 @@ from ug3imu.preprocessing import load_imu_for_mobgap, load_imu_for_skdh
 | `load_imu_for_skdh(path, device, sampling_rate_hz)` | `(time, accel)` — `accel` in **g**, no axis correction | Not called inside `ug3imu.pipelines` any more — the unified engine loads accel once via `load_imu_for_mobgap`/`dp.data_ss` (m/s²) and converts to g locally (`unified_engine._accel_g`) instead of re-reading the file. Kept exported as a standalone SKDH-facing utility for scripts/notebooks. |
 
 Both dispatch on file extension (`.csv` → `preprocess_imu_for_*`, `.npz` → `preprocess_npz_for_mobgap` /
-`load_npz_for_skdh`). Extending to a new format means adding a branch here — see
-[Adding a new input format](#adding-a-new-input-format) below.
+`load_npz_for_skdh`, `.cwa` → `preprocess_cwa_for_mobgap` / `load_cwa_for_skdh`). Extending to a new format
+means adding a branch here — see [Adding a new input format](#adding-a-new-input-format) below.
 
 ### Lower-level functions (rarely called directly)
 
-`preprocess_imu_for_mobgap`, `preprocess_npz_for_mobgap`, `preprocess_imu_for_skdh`, `load_npz_for_skdh` —
-the per-format implementations behind the two dispatchers above. Import these directly only if you're
-bypassing the format registry (e.g. writing a one-off script against a known file type).
+`preprocess_imu_for_mobgap`, `preprocess_npz_for_mobgap`, `preprocess_imu_for_skdh`, `load_npz_for_skdh`,
+`preprocess_cwa_for_mobgap`, `load_cwa_for_skdh` — the per-format implementations behind the two dispatchers
+above. Import these directly only if you're bypassing the format registry (e.g. writing a one-off script
+against a known file type). `read_cwa_raw`/`read_cwa_fs` (see [CWA](#cwa-raw-axivity-binary-ax6-only)
+below) are lower-level still — the per-engine preprocessors call them internally.
 
 ## Input formats
 
@@ -51,6 +54,7 @@ bypassing the format registry (e.g. writing a one-off script against a known fil
 |--------|-----------|-----------------|--------------------------|
 | NPZ | `.npz` | g | `accel (N×3)`, `gyro (N×3, deg/s)`, `fs`, `time` |
 | CSV | `.csv` | g (AX6/DP7/EMPATICA) or m/s² (OPAL) | `Acc_X/Y/Z`, `Gyro_X/Y/Z` |
+| CWA | `.cwa` | g (AX6 only) | raw Axivity binary — read via `skdh.io.ReadCwa`, see below |
 
 The NPZ time vector is read from the `time` key (Unix timestamps, shifted to start at 0); if absent it
 falls back to `fs`, then to the caller-supplied `sampling_rate_hz`.
@@ -77,6 +81,33 @@ and cross-checked against AX6's raw gravity reading at rest (same target convent
 verified). The device key is `EMPATICA_lumbar`, not bare `EMPATICA` — the same subject folder also has
 `EMPATICA_ankleL/ankleR/wrist/BVP_Sync` placements, and `discover_files_by_keyword`'s exact folder-name
 match (device or `{device}_Sync`) needs the full `EMPATICA_lumbar_Sync` name to avoid picking those up too.
+
+## CWA (raw Axivity binary, AX6 only)
+
+Added for batch-processing raw `.cwa` dumps directly (no sync/export step), e.g. for a
+headless cluster job over at-home recordings. `read_cwa_raw(path)` wraps
+`skdh.io.ReadCwa` and returns `{"accel": (N,3) g, "gyro": (N,3) deg/s or None, "fs": float,
+"time": (N,) s from 0}`; `read_cwa_fs(path)` returns just the fs. `preprocess_cwa_for_mobgap`
+and `load_cwa_for_skdh` build on it the same way the CSV/NPZ loaders do.
+
+**Use the file's own actual fs, not a nominal rate.** `fs` here is whatever `ReadCwa` read
+out of the file's header (e.g. 99.97 Hz), not a flat 100 — Axivity units drift from nominal
+differently per device/recording, and that error compounds over multi-day at-home
+recordings if a nominal rate is assumed instead. `load_cwa_for_skdh`'s `sampling_rate_hz`
+parameter exists only for interface parity with the other `load_*_for_skdh` functions and is
+ignored in favor of the file's own rate.
+
+**Orientation is an unverified placeholder.** Both `preprocess_cwa_for_mobgap` and
+`load_cwa_for_skdh` reuse the AX6 CSV path's axis transform (g→m/s² + 180° rotation around X)
+verbatim — that transform was derived from `*_ax6_sync.csv` lab exports, not checked against
+a raw `.cwa` read directly off the device. Before trusting absolute values (walking speed,
+stride length — detection/counts are more robust to a wrong sign/axis swap than magnitudes
+are), verify on one file: a quiet/lying-still segment should read ≈1 g on the axis the code
+treats as "up" after the flip. Both functions have a `TODO(cwa-orientation)` comment marking
+exactly where to fix this if it's wrong.
+
+Only AX6 is supported — both functions raise `ValueError` for any other device, since the
+other devices here don't produce `.cwa` files.
 
 ## Adding a new input format
 

@@ -3,6 +3,19 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-10-29 — Raw `.cwa` (Axivity binary) input format, AX6 only
+
+AX6 data can now be fed into the pipeline straight from the raw `.cwa` file the device writes, with no
+sync/export step first — added for a headless cluster batch job over at-home recordings. New
+`preprocess_cwa_for_mobgap` / `load_cwa_for_skdh` / `read_cwa_raw` / `read_cwa_fs` in
+[preprocessing/imu_preprocessing.py](src/ug3imu/preprocessing/imu_preprocessing.py), reading the binary via
+`skdh.io.ReadCwa`; wired into `load_imu_for_mobgap`/`load_imu_for_skdh` and `INPUT_FORMATS`. See
+[preprocessing/README.md — CWA](src/ug3imu/preprocessing/README.md#cwa-raw-axivity-binary-ax6-only):
+the axis-orientation transform is carried over unverified from the lab AX6 CSV path and is explicitly
+flagged as a placeholder (`TODO(cwa-orientation)`) pending a check against a real at-home recording; each
+file's own actual device sampling rate is used throughout rather than a nominal rate, since Axivity units
+drift from nominal differently per device/recording.
+
 ## 2026-10-15 — EMPATICA (Embrace Plus) support; several MobGap/report_app fixes surfaced by real data
 
 A fourth device, **EMPATICA** (Embrace Plus, lumbar placement), is now supported end-to-end: raw-file

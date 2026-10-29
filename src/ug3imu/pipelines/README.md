@@ -287,8 +287,11 @@ the MobGap format so both engines' CSVs are directly comparable (see
 from ug3imu.pipelines import INPUT_FORMATS, discover_files_by_keyword
 ```
 
-- **`INPUT_FORMATS`** — `{"NPZ": ".npz", "CSV": ".csv"}` registry; the GUI's **Input Format** dropdown reads
-  this directly. See [Adding a new input format](../preprocessing/README.md#adding-a-new-input-format).
+- **`INPUT_FORMATS`** — `{"NPZ": ".npz", "CSV": ".csv", "CWA": ".cwa"}` registry; the GUI's **Input Format**
+  dropdown reads this directly. `.cwa` is AX6-only and reads the raw Axivity binary directly via
+  `skdh.io.ReadCwa` — see [preprocessing/README.md — CWA](../preprocessing/README.md#cwa-raw-axivity-binary-ax6-only)
+  for the orientation caveat before trusting absolute values from it. See also
+  [Adding a new input format](../preprocessing/README.md#adding-a-new-input-format).
 - **`discover_files_by_keyword(project_root, subject, keywords, device=None, file_ext=None)`** — discovery
   function actually used by the GUI. Recursively searches `{root}/{subject}/`, works for both the flat lab
   layout and the nested at-home layout, excludes known pipeline-output subfolders (`IC/`, `stride/`, `wb/`,
