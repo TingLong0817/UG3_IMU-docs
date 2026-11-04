@@ -143,7 +143,11 @@ every stride** — there's no fallback to the old columns.
 - [`pipelines/skdh_lab_pipeline.py`](../pipelines/skdh_lab_pipeline.py) — same, for the SKDH lab path
 - [`metrics/ic_evaluation.py`](../metrics/ic_evaluation.py) — `mocap_txt_to_ic_df` as the IC reference
 - [`metrics/stride_evaluation.py`](../metrics/stride_evaluation.py) — `mocap_txt_to_stride_df` as the stride reference
-- [`metrics/wb_evaluation.py`](../metrics/wb_evaluation.py) — `mocap_txt_to_wb_df` as the trial-level WB reference
+- [`metrics/wb_evaluation.py`](../metrics/wb_evaluation.py) — `mocap_txt_to_stride_df` (via
+  [`pipelines/mobilised_wb.py`](../pipelines/mobilised_wb.py)'s `mocap_txt_to_wb_df_mobgap`) as the WB
+  reference, assembled to the same `StrideSelection`/`WbAssembly`/trim standard as the IMU side.
+  `mocap_txt_to_wb_df` itself (whole-trial V3D mean, no selection/assembly/trim) is no longer used by any
+  evaluation function, but stays public for ad hoc trial-mean lookups.
 
 For the equivalent reference-system module when using INDIP `.mat` files instead of V3D TXT, see
 [`ug3imu.indip`](../indip/README.md).

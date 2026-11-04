@@ -186,6 +186,12 @@ Both engines pool strides across all GSD windows and let `WbAssembly`'s own brea
 boundaries (rather than treating a GSD window as one WB), so a Lab trial with a >3 s pause can legitimately
 split into more than one WB.
 
+**Mocap reference, same standard** — `mocap_stride_df_to_wb_df()` / `mocap_txt_to_wb_df_mobgap()` run a
+V3D stride list (`mocap.mocap_txt_to_stride_df`) through this identical selection → assembly → trim
+pipeline, so a mocap reference WB is built exactly like an IMU algorithm's WB instead of V3D's own
+whole-trial mean (`mocap.mocap_txt_to_wb_df`, which applies none of these rules). Used by
+`metrics.wb_evaluation.batch_wb_analysis_v3d` as the Lab WB-evaluation reference.
+
 ## PRESETS
 
 `PRESETS` (in [stage_registry.py](stage_registry.py)) is the single source of truth the GUI reads to

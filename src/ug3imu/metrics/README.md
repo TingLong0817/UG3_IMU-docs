@@ -92,7 +92,11 @@ from ug3imu.metrics import match_strides, process_stride_trial, batch_stride_ana
 - `process_stride_trial(...)` / `batch_stride_analysis(...)` — single-trial / folder-batch wrappers around
   `match_strides` (both also take `buffer_s=0.2`, converted to frames internally), same batching convention
   as the IC module. `batch_stride_analysis` additionally computes per-trial RMSE per parameter in the
-  returned `summary_all`.
+  returned `summary_all`. The V3D reference strides are run through
+  `pipelines.mobilised_wb.select_mocap_strides` (mobgap's `StrideSelection`, duration 0.2–3.0s / length
+  ≥0.15m — the same rule every IMU `*_stride.csv` has already been filtered by) before matching, so a
+  near-zero-length turn-pivot "stride" from V3D doesn't get treated as a reference an algorithm should have
+  reported.
 - `normalize_athome_stride(stride_df, imu_fs)` — converts an At-Home `*_stride.csv` to the common
   `start`/`end` (IMU frame) schema `match_strides` expects. Since the stride-selection/WB-assembly
   unification, `unified_engine._run_skdh_gait` runs SKDH At-Home strides through the same
@@ -130,7 +134,12 @@ one comparable "trial" per recording); At-Home free-living data has no per-trial
 against.
 
 - `batch_wb_analysis_v3d(wb_folder, txt_folder, imu_fs, mocap_fs=255, ...)` — reference from
-  `mocap_txt_to_wb_df` (see [`ug3imu.mocap`](../mocap/README.md)).
+  `pipelines.mobilised_wb.mocap_txt_to_wb_df_mobgap`: the V3D stride list run through the same
+  `StrideSelection` → `WbAssembly(WBA_RULES)` → first/last-stride-trim pipeline the IMU engines use (see
+  [`pipelines/README.md`](../pipelines/README.md#stride-selection--walking-bout-assembly-mobilised_wbpy)),
+  then aggregated to one trial-level row with `_aggregate_imu_wbs` — same selection/assembly/trim/aggregation
+  on both sides, rather than comparing an assembled IMU WB against V3D's own whole-trial mean
+  (`mocap.mocap_txt_to_wb_df`, which applies none of those rules).
 - `batch_wb_analysis_indip(wb_folder, mat_path, imu_fs, ...)` — reference from
   `load_indip_cwp_map` (see [`ug3imu.indip`](../indip/README.md)); uses `ContinuousWalkingPeriod`, not
   `MicroWB` — MicroWB has no QC applied, so CWP is the reference used everywhere in this codebase.
