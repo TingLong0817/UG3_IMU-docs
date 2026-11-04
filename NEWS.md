@@ -3,6 +3,32 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-11-04 — Upgraded scikit-digital-health 0.17.9 → 0.17.18
+
+Checked every release between the two (GitHub release notes + a line-by-line diff of
+`skdh/gait/core.py` and `gait_metrics.py`) before bumping the pin in `requirements.txt`:
+
+- **Breaking, fixed here**: `GaitLumbar`'s output column `"IC Time"` was renamed to
+  `"IC Datetime"` in 0.17.18 (plus two new columns, `"IC Timestamp"`/`"IC Rel Timestamp"`,
+  that we don't use). Without a fix, `gait_lumbar_df_to_stride_df` would have silently
+  returned `None` for every SKDH-gait run — no error, just empty stride/WB output. Updated
+  the 4 call sites (`pipelines/skdh_lab_pipeline.py`, `pipelines/unified_engine.py` ×2,
+  `metrics/stride_evaluation.py`) to the new name; `stride_evaluation.normalize_athome_stride`
+  still accepts the old `"IC Time"` name too, since it reads *historical* `*_stride.csv`
+  files that may have been written under 0.17.9.
+- **Not breaking**: `GaitLumbar.predict()` gained an optional `leg_length=` kwarg (0.17.16,
+  takes priority over `height`×`height_factor` if both given) — our existing
+  `height=`/`height_factor=` call pattern is the documented fallback path and needed no
+  change. The old `provide_leg_length` constructor flag was removed; we never used it.
+  `gait_metrics.py` (the actual stride/step-length/cadence/speed formulas) is byte-for-byte
+  identical between the two versions — no numeric-formula changes in this range despite
+  0.17.10's changelog note about "gait results changed slightly" (that change must live in
+  a dependency outside this file).
+
+Verified end-to-end on a real P17 lab AX6 recording (`LWA_01`) through
+`run_unified_pipeline` for both SKDH IC methods (`"AP CWT"`, `"Vertical CWT"`) and MobGap —
+all three produce non-empty GS/IC/stride/WB output after the fix.
+
 ## 2026-10-29 — Raw `.cwa` (Axivity binary) input format, AX6 only
 
 AX6 data can now be fed into the pipeline straight from the raw `.cwa` file the device writes, with no
