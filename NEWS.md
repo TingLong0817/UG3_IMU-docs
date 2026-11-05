@@ -3,6 +3,40 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-11-04 — Two new tunable knobs: fixed SKDH `v_axis`/`ap_axis`, for a real dual-task false-positive bug
+
+Diagnosed a bad SKDH `"AP CWT"` result on a real trial: UG035's `DTWTEXT_02` (dual-task, texting while
+walking) reported SKDH cadence over 400 spm, with `ic_metrics_v3d_lab.csv` showing precision 0.44 (49 FP
+out of 88 detected ICs) against MobGap's 0.83 on the same trial. Root cause, confirmed by reproducing the
+exact mocap-cropped window (`parse_mocap_frame_window`'s 29 s crop) standalone: `GaitLumbar`'s own per-bout
+AP-axis estimate picked axis 1 on that crop vs. axis 2 on the full 42 s file — texting-related arm/torso
+motion apparently competes with the true AP oscillation once the window is tightened to just the walking
+span. The wrong axis fed `mean step freq = 5 Hz` (true rate ~1.6 Hz) into the AP-CWT wavelet-scale formula,
+fragmenting what should be one stride into several spurious ICs. Confirmed this is *not* a regression from
+the 0.17.18 upgrade above — reproduced byte-identical under a side-installed 0.17.9.
+
+Added `skdh_v_axis`/`skdh_ap_axis` to `PipelineConfig`, threaded through to `GaitLumbar.predict()`'s
+`v_axis`/`ap_axis` kwargs in `unified_engine._run_skdh_gait`, `expand_configs()`, and the GUI's SKDH
+"⚙ Params" dialog — same self-describing-output/filename-tag pattern as the other tunable knobs (see
+[pipelines/README.md — Tunable SKDH/MobGap parameters](src/ug3imu/pipelines/README.md#tunable-skdhmobgap-parameters)).
+
+**Unlike every other tunable knob here, the default is a fixed axis (`v_axis=0, ap_axis=2`), not a
+`None`/"let the library decide" sentinel.** Reasoning: `unified_engine._accel_g` feeds SKDH the *same*
+array MobGap's own pipeline already rotated into the Mobilise-D convention (`acc_x` = up, `acc_z` =
+forward) — true for every device, since `build_dataset_from_file_list` always loads through
+`load_imu_for_mobgap` first. So the axis mapping is already fixed and identical across devices by the time
+SKDH runs; re-estimating it per bout from the signal is pure downside, confirmed by the UG035 case above.
+Pass `skdh_v_axis=None`/`skdh_ap_axis=None` explicitly to opt back into SKDH's own per-bout estimate.
+
+Initially implemented this as an opt-in override (default `None`, matching the other knobs) before
+reconsidering: that would have required deriving the axis per device from each one's raw sign-flip
+convention in `preprocessing/imu_preprocessing.py` (confirmed those also resolve to axis 0/2 for all four
+supported devices — AX6/OPAL/DP7/EMPATICA — since none of their rotation recipes swap axes, only flip
+signs) — a real but unnecessary detour, since `_run_skdh_gait` never actually sees that raw, per-device
+frame; it only ever sees the already-unified rotated one. The GUI's SKDH params dialog now pre-fills these
+two fields with `"0"`/`"2"` to match (clearing a field opts back into the per-bout estimate, the reverse of
+every other field in that dialog).
+
 ## 2026-11-04 — Upgraded scikit-digital-health 0.17.9 → 0.17.18
 
 Checked every release between the two (GitHub release notes + a line-by-line diff of

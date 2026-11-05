@@ -107,7 +107,7 @@ knobs below.
 
 ## Tunable SKDH/MobGap parameters
 
-Seven numeric/boolean knobs on `PipelineConfig` (default `None` = "use the library's own class default",
+Nine numeric/boolean knobs on `PipelineConfig` (default `None` = "use the library's own class default",
 except `skdh_height_factor`, a real float since SKDH has no `None` sentinel for it):
 
 | Field | Reaches | Only applies when | Class default |
@@ -119,6 +119,25 @@ except `skdh_height_factor`, a real float since SKDH has no `None` sentinel for 
 | `skdh_use_cwt_scale_relation` | same substep | same as above | `True` (adaptive) |
 | `skdh_max_stride_time` | `GaitLumbar`'s `CreateStridesAndQc` substep | either `icd_algorithm` (this substep always runs) | adaptive (`2.0 * mean_step_time + 1.0`) |
 | `mobgap_step_length_scaling_factor` | MobGap `SlZijlstra` | `gait_engine == "mobgap"` | 1.14675 |
+| `skdh_v_axis` | `GaitLumbar.predict()`'s `v_axis` | always, `gait_engine == "skdh"` | **0** (not adaptive — see below) |
+| `skdh_ap_axis` | `GaitLumbar.predict()`'s `ap_axis` | `icd_algorithm == "AP CWT"` (`"Vertical CWT"` has no AP axis) | **2** (not adaptive — see below) |
+
+**`skdh_v_axis`/`skdh_ap_axis` are the odd ones out — their default is a fixed axis, not a `None`/"let the
+library decide" sentinel like every other knob here.** `unified_engine._accel_g` feeds SKDH `dp.data_ss` —
+the *same* array MobGap's own pipeline already rotated into the Mobilise-D convention (`acc_x` = up,
+`acc_z` = forward), just unit-converted back to g — for every device, since `build_dataset_from_file_list`
+always loads through `load_imu_for_mobgap` regardless of which gait engine ends up using the data. So by
+the time SKDH runs, the axis mapping is already fixed and identical across devices; letting `GaitLumbar`
+re-estimate it per bout from the signal is pure downside. Confirmed on a real trial: a dual-task "texting"
+(DTWTEXT) recording's AP-axis estimate flipped between the full 42 s file and the mocap-cropped 29 s window
+of the *same* recording, driving `mean step freq` to 5 Hz (true rate ~1.6 Hz) and reported cadence past 400
+spm, with 49 of 88 detected ICs false positives (`ic_metrics` precision 0.44). Passing `v_axis=0, ap_axis=2`
+dropped detected IC count from 90 to 42 — exactly matching the mocap reference's 42 ICs — with cadence back
+to a normal 91 mean / 115 max spm. See NEWS.md for the full diagnosis.
+
+Pass `skdh_v_axis=None`/`skdh_ap_axis=None` explicitly to opt back into SKDH's own per-bout estimate (e.g.
+to compare against it) — `stage_algorithm_values()` records that as `"auto"`, not `"default"`, since `0`/`2`
+is the real default now.
 
 `ic_prom_factor`/`fc_prom_factor` and `wavelet_scale`/`use_cwt_scale_relation` only reach the AP-CWT /
 Vertical-CWT branch they're named after (`GaitLumbar.__init__` dispatches them inside an `if/elif` on
