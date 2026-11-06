@@ -335,6 +335,12 @@ Every pipeline run writes `qc/qc_summary_*.txt`. Both MobGap and SKDH call
 block format regardless of engine — callers extract counts from their own result objects and pass them in
 as keyword arguments.
 
+Each trial in the batch is processed inside its own `try/except` (`unified_engine._run_skdh_gait`,
+`pipeline_factory.run_pipeline_on_dataset`) — one trial raising is logged and skipped, not fatal to the
+rest of the batch. After every trial's block, the file ends with a `Summary` section
+(`build_qc_summary_footer`) listing which trials ended up with 0 walking bouts and which failed outright,
+so a batch run's health is visible without reading every block.
+
 ### Filtering rules reported
 
 | Level | Rule | At-Home | Lab | Functional Test |

@@ -3,6 +3,19 @@
 Notable changes to the toolbox, newest first. Maintained by hand alongside the repository — not a
 live feed of the GitHub history.
 
+## 2026-11-05 — QC summary gets a final zero-WB / failed-trial tally; one bad trial no longer aborts a batch
+
+Two related fixes to `qc_summary_{algorithm}.txt` (written by both `unified_engine._run_skdh_gait` and
+`pipeline_factory.run_pipeline_on_dataset`):
+
+- Each per-trial body is now wrapped in its own `try/except` — an exception partway through one trial
+  (bad GSD window, a pipeline step raising, …) is logged and that trial is skipped, instead of aborting
+  every trial after it in the same batch call (and losing the qc_summary file for all of them, since it
+  used to only get written after the full loop finished without raising).
+- A final `Summary` section is appended after all per-trial blocks, via the new
+  `qc_templates.build_qc_summary_footer`: lists which trials ended up with 0 walking bouts, and which
+  failed outright, so a scan of just the last few lines tells you whether a batch run needs follow-up.
+
 ## 2026-11-04 — Two new tunable knobs: fixed SKDH `v_axis`/`ap_axis`, for a real dual-task false-positive bug
 
 Diagnosed a bad SKDH `"AP CWT"` result on a real trial: UG035's `DTWTEXT_02` (dual-task, texting while
